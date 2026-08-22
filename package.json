@@ -1,0 +1,25 @@
+{
+  "name": "mesa-clara-pos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "serve": "node server/index.mjs",
+    "shared": "npm run build && npm run serve",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@supabase/supabase-js": "^2.112.3",
+    "astro": "^7.2.4",
+    "exceljs": "^4.4.0",
+    "typescript": "^5.9.2"
+  },
+  "overrides": {
+    "uuid": "^11.1.1",
+    "sharp": "^0.35.3"
+  }
+}

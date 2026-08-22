@@ -1,0 +1,226 @@
+---
+import '../styles/global.css';
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="#f5f3ee" />
+    <meta
+      name="description"
+      content="Punto de venta simple para restaurantes y tiendas"
+    />
+    <title>Mesa Clara POS</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navegación principal">
+        <a class="brand" href="#" aria-label="Mesa Clara POS">
+          <span class="brand-mark">M</span>
+          <span><strong>Mesa Clara</strong><small>Punto de venta</small></span>
+        </a>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-view="pos" type="button">
+            <span>▦</span> Caja
+          </button>
+          <button class="nav-item" data-view="history" type="button">
+            <span>↺</span> Historial
+          </button>
+          <p id="admin-nav-label" class="nav-label">Administración</p>
+          <button class="nav-item admin-nav" data-view="events" data-admin-view type="button">
+            <span>◇</span> Evento y cuadre <small>🔒</small>
+          </button>
+          <button class="nav-item admin-nav" data-view="users" data-admin-view type="button">
+            <span>♙</span> Cajeros <small>🔒</small>
+          </button>
+          <button class="nav-item admin-nav" data-view="products" data-admin-view type="button">
+            <span>□</span> Productos <small>🔒</small>
+          </button>
+          <button class="nav-item admin-nav" data-view="stores" data-admin-view type="button">
+            <span>⌂</span> Tiendas <small>🔒</small>
+          </button>
+          <button class="nav-item admin-nav" data-view="settings" data-admin-view type="button">
+            <span>⚙</span> Ajustes <small>🔒</small>
+          </button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <button id="admin-session" type="button"><span>♙</span><span><strong>Sin sesión</strong><small>Iniciar sesión</small></span></button>
+          <p id="sync-status" data-mode="saving"><span class="status-dot"></span> <span data-sync-label>Conectando base…</span></p>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <button id="menu-toggle" class="icon-btn menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+          <div>
+            <p class="eyebrow" id="view-eyebrow">Punto de venta</p>
+            <h1 id="view-title">Nueva venta</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="event-status" class="event-pill inactive" type="button"><span>◇</span><span>Sin evento</span></button>
+            <label class="store-picker">
+              <span>Tienda</span>
+              <select id="store-select" aria-label="Seleccionar tienda"></select>
+            </label>
+            <button id="cash-status" class="cash-pill closed" type="button">
+              <span class="status-dot"></span><span>Caja cerrada</span>
+            </button>
+          </div>
+        </header>
+
+        <section id="view-pos" class="view active">
+          <div class="pos-layout">
+            <section class="catalog-panel">
+              <div class="catalog-tools">
+                <label class="search-box">
+                  <span>⌕</span>
+                  <input id="product-search" type="search" placeholder="Buscar producto o código…" autocomplete="off" />
+                  <kbd>⌘ K</kbd>
+                </label>
+                <button class="secondary-btn compact" data-open-product type="button">＋ Producto</button>
+              </div>
+              <div id="category-tabs" class="category-tabs" aria-label="Categorías"></div>
+              <div class="catalog-heading">
+                <div>
+                  <h2 id="catalog-title">Todos los productos</h2>
+                  <p id="catalog-count">0 productos disponibles</p>
+                </div>
+              </div>
+              <div id="product-grid" class="product-grid"></div>
+            </section>
+
+            <aside class="cart-panel">
+              <div class="cart-head">
+                <div>
+                  <p class="eyebrow">Pedido actual</p>
+                  <h2>Mesa / Cliente</h2>
+                </div>
+                <button id="clear-cart" class="text-btn danger" type="button">Limpiar</button>
+              </div>
+              <label class="customer-field">
+                <span>Cliente o mesa (opcional)</span>
+                <input id="customer-name" type="text" placeholder="Ej. Mesa 04" maxlength="60" />
+              </label>
+              <div id="cart-items" class="cart-items"></div>
+              <div class="cart-summary">
+                <div><span>Subtotal</span><strong id="cart-subtotal">S/ 0.00</strong></div>
+                <div><span>Descuento</span><strong>S/ 0.00</strong></div>
+                <div class="grand-total"><span>Total</span><strong id="cart-total">S/ 0.00</strong></div>
+                <button id="checkout-btn" class="primary-btn checkout-btn" type="button" disabled>
+                  <span>Cobrar</span><span id="checkout-total">S/ 0.00</span>
+                </button>
+                <p class="shortcut-hint"><kbd>F2</kbd> Cobrar · <kbd>Esc</kbd> Cancelar</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="view-events" class="view content-view">
+          <div class="section-toolbar">
+            <div><h2>Evento y cuadre</h2><p>Control consolidado de todas las tiendas.</p></div>
+            <button id="event-primary-action" class="primary-btn fit" type="button">＋ Iniciar evento</button>
+          </div>
+          <div id="active-event-panel"></div>
+          <div class="section-subhead"><div><h3>Eventos terminados</h3><p>Cuadres cerrados y listos para consultar.</p></div></div>
+          <div class="data-card">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Evento</th><th>Inicio</th><th>Fin</th><th>Tiendas</th><th>Ventas</th><th>Total</th><th></th></tr></thead>
+                <tbody id="events-history-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-users" class="view content-view">
+          <div class="section-toolbar">
+            <div><h2>Cajeros</h2><p>Crea accesos simples y asigna cada cajero a su local.</p></div>
+            <button id="new-user-btn" class="primary-btn fit" type="button">＋ Nuevo cajero</button>
+          </div>
+          <div class="data-card">
+            <div class="table-tools"><strong>Usuarios del sistema</strong><span id="users-count" class="soft-label"></span></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Cobertura</th><th>Estado</th><th></th></tr></thead>
+                <tbody id="users-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-products" class="view content-view">
+          <div class="section-toolbar">
+            <div>
+              <h2>Catálogo</h2>
+              <p>Productos de <strong data-current-store></strong></p>
+            </div>
+            <button class="primary-btn fit" data-open-product type="button">＋ Nuevo producto</button>
+          </div>
+          <div class="data-card">
+            <div class="table-tools">
+              <label class="search-box slim"><span>⌕</span><input id="admin-product-search" type="search" placeholder="Buscar en catálogo…" /></label>
+              <span id="admin-product-count" class="soft-label"></span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Producto</th><th>Categoría</th><th>Código</th><th>Precio</th><th>Estado</th><th></th></tr></thead>
+                <tbody id="products-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-stores" class="view content-view">
+          <div class="section-toolbar">
+            <div><h2>Tiendas</h2><p>Administra locales y catálogos independientes.</p></div>
+            <button id="new-store-btn" class="primary-btn fit" type="button">＋ Nueva tienda</button>
+          </div>
+          <div id="stores-grid" class="stores-grid"></div>
+        </section>
+
+        <section id="view-history" class="view content-view">
+          <div class="section-toolbar">
+            <div><h2>Historial de ventas</h2><p>Consulta y vuelve a imprimir tickets.</p></div>
+            <button id="export-sales" class="secondary-btn fit" type="button">↓ Exportar Excel</button>
+          </div>
+          <div class="stats-grid history-stats" id="history-stats"></div>
+          <div class="data-card">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Venta</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Items</th><th>Total</th><th></th></tr></thead>
+                <tbody id="history-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view content-view">
+          <div class="section-toolbar"><div><h2>Ajustes</h2><p>Datos visibles en tickets y operación.</p></div></div>
+          <form id="settings-form" class="settings-grid">
+            <div class="data-card form-card">
+              <h3>Negocio</h3>
+              <label>Nombre comercial<input name="businessName" required maxlength="80" /></label>
+              <label>RUC<input name="ruc" maxlength="20" /></label>
+              <label>Pie del ticket<textarea name="receiptFooter" rows="3" maxlength="160"></textarea></label>
+            </div>
+            <div class="data-card form-card">
+              <h3>Operación</h3>
+              <label>Cajero predeterminado<input name="cashier" required maxlength="60" /></label>
+              <label>Moneda<select name="currency"><option value="PEN">Sol peruano (PEN)</option></select></label>
+              <button class="primary-btn fit" type="submit">Guardar ajustes</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal-root" class="modal-root" aria-live="polite"></div>
+    <div id="toast" class="toast" role="status"></div>
+    <div id="print-area" class="print-area"></div>
+    <script src="../scripts/pos-app.js"></script>
+  </body>
+</html>
