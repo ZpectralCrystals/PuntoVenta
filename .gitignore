@@ -7,6 +7,8 @@ data/*.sqlite-*
 data/backups/
 .vercel/
 .supabase/
+supabase/.temp/
+outputs/
 .env
 .env.*
 !.env.example
