@@ -9,7 +9,7 @@ state.sessions = [];
 state.sales = [];
 state.events = [];
 state.users = state.users.map((user) => {
-  const next = { ...user, passwordHash: user.passwordHash || hashPassword(user.password) };
+  const next = { ...user, passwordHash: hashPassword(user.password) };
   delete next.password;
   return next;
 });
