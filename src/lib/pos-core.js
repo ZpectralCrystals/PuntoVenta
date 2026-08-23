@@ -66,6 +66,23 @@ export function sessionSummary(session, sales) {
 export function eventSettlement(event, stores, sessions, sales) {
   const eventSessions = sessions.filter((session) => session.eventId === event?.id);
   const eventSales = sales.filter((sale) => sale.eventId === event?.id);
+  const sessionRows = eventSessions.map((session) => {
+    const summary = sessionSummary(session, eventSales);
+    const countedCash = session.closedAt ? Number(session.closingAmount || 0) : null;
+    return {
+      id: session.id,
+      cashier: session.cashier || 'Sin cajera',
+      openedAt: session.openedAt,
+      closedAt: session.closedAt || null,
+      saleCount: summary.count,
+      salesTotal: summary.salesTotal,
+      payments: summary.payments,
+      openingCash: Number(session.openingAmount || 0),
+      expectedCash: summary.expectedCash,
+      countedCash,
+      difference: countedCash === null ? null : Number(session.difference ?? countedCash - summary.expectedCash),
+    };
+  });
   const rows = stores.map((store) => {
     const storeSales = eventSales.filter((sale) => sale.storeId === store.id);
     const payments = { EFECTIVO: 0, YAPE: 0 };
@@ -87,6 +104,7 @@ export function eventSettlement(event, stores, sessions, sales) {
   return {
     centralizedCash: true,
     stores: rows,
+    sessions: sessionRows,
     saleCount: rows.reduce((sum, row) => sum + row.saleCount, 0),
     salesTotal: rows.reduce((sum, row) => sum + row.salesTotal, 0),
     openingCash,

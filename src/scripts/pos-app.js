@@ -22,6 +22,7 @@ let state = loadState();
 let authToken = sessionStorage.getItem(AUTH_KEY) || '';
 let currentUser = authToken ? state.users.find((user) => user.id === sessionStorage.getItem(SESSION_KEY) && user.active) || null : null;
 let selectedStoreId = state.stores[0]?.id || '';
+let selectedReportEventId = '';
 let cart = [];
 let selectedCategory = 'Todos';
 let paymentMethod = 'EFECTIVO';
@@ -50,7 +51,13 @@ const currentEvent = () => state.events.find((event) => !event.closedAt);
 const currentSession = () => state.sessions.find((session) => session.eventId === currentEvent()?.id && !session.closedAt);
 const storeProducts = () => state.products.filter((product) => product.storeId === selectedStoreId);
 const activeSales = () => state.sales.filter((sale) => !sale.excludedAt);
-const storeSales = () => activeSales().filter((sale) => sale.storeId === selectedStoreId && (currentUser?.role === 'admin' || sale.userId === currentUser?.id));
+const closedEvents = () => state.events.filter((event) => event.closedAt).sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
+const reportEvent = () => closedEvents().find((event) => event.id === selectedReportEventId);
+const reportSales = () => {
+  const event = reportEvent();
+  if (!event) return [];
+  return activeSales().filter((sale) => sale.eventId === event.id && sale.storeId === selectedStoreId && (currentUser?.role === 'admin' || sale.userId === currentUser?.id));
+};
 const formatDate = (date) => new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(date));
 
 function loadState() {
@@ -419,6 +426,16 @@ function renderCashStatus() {
   button.title = session ? 'Cerrar caja central' : currentUser?.role === 'cashier' ? 'Abrir caja central' : 'Solo cajera puede abrir caja';
 }
 
+function settlementForEvent(event) {
+  const computed = eventSettlement(event, state.stores, state.sessions, activeSales());
+  if (!event.settlement) return computed;
+  return {
+    ...computed,
+    ...event.settlement,
+    sessions: event.settlement.sessions || computed.sessions,
+  };
+}
+
 function renderEvents() {
   const event = currentEvent();
   const action = $('#event-primary-action');
@@ -443,7 +460,7 @@ function renderEvents() {
         <div class="stat-card"><span>YAPE</span><strong>${money(settlement.payments.YAPE)}</strong></div>
         <div class="stat-card"><span>FONDO INICIAL</span><strong>${money(settlement.openingCash)}</strong></div>
         <div class="stat-card"><span>EFECTIVO ESPERADO</span><strong>${money(settlement.expectedCash)}</strong></div>
-        <div class="stat-card ${settlement.openRegisters ? 'warning-stat' : ''}"><span>CAJA CENTRAL</span><strong>${settlement.openRegisters ? 'Abierta' : 'Cerrada'}</strong></div>
+        <div class="stat-card ${settlement.openRegisters ? 'warning-stat' : ''}"><span>SESIONES DE CAJA</span><strong>${settlement.sessions.length} · ${settlement.openRegisters ? `${settlement.openRegisters} abierta` : 'sin abiertas'}</strong></div>
       </div>
       <div class="data-card event-stores-card">
         <div class="table-tools"><strong>Cuadre provisional por tienda</strong><span class="soft-label">Actualización automática</span></div>
@@ -456,9 +473,9 @@ function renderEvents() {
   }
 
   $$('[data-start-event]').forEach((button) => button.addEventListener('click', openStartEventModal));
-  const closedEvents = state.events.filter((item) => item.closedAt).sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
-  $('#events-history-table').innerHTML = closedEvents.length ? closedEvents.map((item) => {
-    const settlement = item.settlement || eventSettlement(item, state.stores, state.sessions, activeSales());
+  const finishedEvents = closedEvents();
+  $('#events-history-table').innerHTML = finishedEvents.length ? finishedEvents.map((item) => {
+    const settlement = settlementForEvent(item);
     return `<tr><td><strong>${esc(item.name)}</strong></td><td>${formatDate(item.openedAt)}</td><td>${formatDate(item.closedAt)}</td><td>${settlement.stores.length}</td><td>${settlement.saleCount}</td><td><strong>${money(settlement.salesTotal)}</strong></td><td><div class="row-actions"><button data-view-settlement="${item.id}" type="button" title="Ver cuadre">⌑</button></div></td></tr>`;
   }).join('') : '<tr><td colspan="7"><div class="empty-state">Aún no existen eventos cerrados.</div></td></tr>';
   $$('[data-view-settlement]').forEach((button) => button.addEventListener('click', () => {
@@ -657,12 +674,20 @@ function renderStores() {
 }
 
 function renderHistory() {
-  const sales = [...storeSales()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const events = closedEvents();
+  if (!events.some((event) => event.id === selectedReportEventId)) selectedReportEventId = events[0]?.id || '';
+  const selector = $('#history-event-select');
+  selector.innerHTML = events.length
+    ? events.map((event) => `<option value="${event.id}" ${event.id === selectedReportEventId ? 'selected' : ''}>${esc(event.name)}</option>`).join('')
+    : '<option value="">Sin eventos cerrados</option>';
+  selector.disabled = !events.length;
+  const sales = [...reportSales()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const event = reportEvent();
   const total = sales.reduce((sum, sale) => sum + sale.total, 0);
   const cash = sales.filter((sale) => sale.payment === 'EFECTIVO').reduce((sum, sale) => sum + sale.total, 0);
   const yape = sales.filter((sale) => sale.payment === 'YAPE').reduce((sum, sale) => sum + sale.total, 0);
   $('#history-stats').innerHTML = `
-    <div class="stat-card"><span>VENTAS REGISTRADAS</span><strong>${sales.length}</strong></div>
+    <div class="stat-card"><span>TICKETS · ${esc(event?.name || 'SIN EVENTO')}</span><strong>${sales.length}</strong></div>
     <div class="stat-card"><span>VENTA ACUMULADA</span><strong>${money(total)}</strong></div>
     <div class="stat-card payment-stat cash-stat"><span>EFECTIVO</span><strong>${money(cash)}</strong><small>${total ? ((cash / total) * 100).toFixed(1) : '0.0'}% del total</small></div>
     <div class="stat-card payment-stat yape-stat"><span>YAPE</span><strong>${money(yape)}</strong><small>${total ? ((yape / total) * 100).toFixed(1) : '0.0'}% del total</small></div>`;
@@ -672,7 +697,8 @@ function renderHistory() {
       <td>${esc(sale.customer || 'Cliente general')}</td><td><span class="badge">${esc(sale.payment)}</span></td>
       <td>${sale.items.reduce((sum, item) => sum + item.qty, 0)}</td><td><strong>${money(sale.total)}</strong></td>
       <td><div class="row-actions"><button data-reprint="${sale.id}" type="button" title="Imprimir">⌑</button></div></td>
-    </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state">Aún no hay ventas en esta tienda.</div></td></tr>';
+    </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state">${event ? 'Sin ventas para esta tienda en el evento seleccionado.' : 'Cierra un evento para habilitar su reporte final.'}</div></td></tr>`;
+  $('#export-sales').disabled = !event || !sales.length;
   $$('[data-reprint]').forEach((button) => button.addEventListener('click', () => {
     const sale = state.sales.find((item) => item.id === button.dataset.reprint);
     if (sale) openTicketModal(sale);
@@ -923,6 +949,7 @@ function deleteStore(storeId) {
 }
 
 function openStartEventModal() {
+  if (!isAdmin) return showToast('Solo administrador puede iniciar evento');
   setModal(`<div class="modal">
     <div class="modal-head"><div><h2>Iniciar evento</h2><p>Agrupará ventas y cajas de todas las tiendas.</p></div><button class="modal-close" data-close-modal type="button">×</button></div>
     <form id="start-event-form">
@@ -935,6 +962,7 @@ function openStartEventModal() {
   </div>`);
   $('#start-event-form').addEventListener('submit', (event) => {
     event.preventDefault();
+    if (!isAdmin || currentEvent()) return closeModal();
     const name = String(new FormData(event.currentTarget).get('name')).trim();
     state.events.push({ id: uid('event'), name, openedAt: new Date().toISOString(), closedAt: null, status: 'active' });
     saveState();
@@ -946,6 +974,7 @@ function openStartEventModal() {
 }
 
 function openCloseEventModal() {
+  if (!isAdmin) return showToast('Solo administrador puede cerrar evento');
   const event = currentEvent();
   if (!event) return openStartEventModal();
   const settlement = eventSettlement(event, state.stores, state.sessions, activeSales());
@@ -963,7 +992,8 @@ function openCloseEventModal() {
     <div class="modal-actions"><button class="secondary-btn" data-close-modal type="button">Volver</button><button id="confirm-event-close" class="primary-btn" type="button" ${openSessions.length ? 'disabled' : ''}>Cerrar y guardar cuadre</button></div>
   </div>`);
   $('#confirm-event-close').addEventListener('click', () => {
-    if (settlement.openRegisters) return;
+    const hasOpenSessions = state.sessions.some((session) => session.eventId === event.id && !session.closedAt);
+    if (!isAdmin || hasOpenSessions || event.closedAt) return showToast('Cierra todas las cajas antes del evento');
     event.closedAt = new Date().toISOString();
     event.status = 'closed';
     event.settlement = settlement;
@@ -978,12 +1008,16 @@ function openCloseEventModal() {
 }
 
 function settlementMarkup(event) {
-  const settlement = event.settlement || eventSettlement(event, state.stores, state.sessions, activeSales());
+  const settlement = settlementForEvent(event);
   return `<section class="settlement-report">
     <header><p class="eyebrow">Cuadre final de evento</p><h3>${esc(event.name)}</h3><p>${formatDate(event.openedAt)} → ${event.closedAt ? formatDate(event.closedAt) : 'En curso'}</p></header>
     <div class="settlement-kpis"><div><span>VENTAS</span><strong>${settlement.saleCount}</strong></div><div><span>TOTAL</span><strong>${money(settlement.salesTotal)}</strong></div><div><span>DIFERENCIA</span><strong>${money(settlement.difference)}</strong></div></div>
     <div class="table-wrap"><table><thead><tr><th>Tienda</th><th>Tickets</th><th>Total</th><th>Efectivo</th><th>Yape</th></tr></thead><tbody>
       ${settlement.stores.map((row) => `<tr><td><strong>${esc(row.storeName)}</strong></td><td>${row.saleCount}</td><td>${money(row.salesTotal)}</td><td>${money(row.payments.EFECTIVO)}</td><td>${money(row.payments.YAPE)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <h4>Sesiones de caja</h4>
+    <div class="table-wrap"><table><thead><tr><th>Caja</th><th>Cajera</th><th>Apertura</th><th>Cierre</th><th>Tickets</th><th>Total</th><th>Efectivo</th><th>Yape</th><th>Diferencia</th></tr></thead><tbody>
+      ${settlement.sessions.map((session, index) => `<tr><td><strong>#${index + 1}</strong></td><td>${esc(session.cashier)}</td><td>${formatDate(session.openedAt)}</td><td>${session.closedAt ? formatDate(session.closedAt) : 'Abierta'}</td><td>${session.saleCount}</td><td>${money(session.salesTotal)}</td><td>${money(session.payments.EFECTIVO)}</td><td>${money(session.payments.YAPE)}</td><td>${money(session.difference)}</td></tr>`).join('')}
     </tbody></table></div>
     <footer><div><span>Fondo inicial</span><strong>${money(settlement.openingCash)}</strong></div><div><span>Efectivo esperado</span><strong>${money(settlement.expectedCash)}</strong></div><div><span>Efectivo contado</span><strong>${money(settlement.countedCash)}</strong></div><div><span>Diferencia final</span><strong>${money(settlement.difference)}</strong></div></footer>
   </section>`;
@@ -1003,7 +1037,8 @@ function openSettlementModal(event) {
 }
 
 async function exportSettlement(event) {
-  const settlement = event.settlement || eventSettlement(event, state.stores, state.sessions, activeSales());
+  if (!event.closedAt) return showToast('Reporte final disponible al cerrar evento');
+  const settlement = settlementForEvent(event);
   const button = $('#export-settlement');
   button.disabled = true;
   button.textContent = 'Generando Excel…';
@@ -1203,7 +1238,9 @@ function printTicket(sale, copy) {
 }
 
 async function exportSales() {
-  const sales = storeSales();
+  const event = reportEvent();
+  if (!event?.closedAt) return showToast('Selecciona un evento cerrado');
+  const sales = reportSales();
   if (!sales.length) return showToast('No hay ventas para exportar');
   const button = $('#export-sales');
   button.disabled = true;
@@ -1213,10 +1250,10 @@ async function exportSales() {
     const buffer = await buildSalesWorkbook({
       sales,
       storeName: currentStore()?.name,
-      eventName: currentEvent()?.name,
+      eventName: event.name,
       businessName: state.settings.businessName,
     });
-    downloadWorkbook(buffer, `ventas-${currentStore()?.name || 'festival'}`);
+    downloadWorkbook(buffer, `ventas-${event.name}-${currentStore()?.name || 'festival'}`);
     showToast('Excel generado correctamente');
   } catch (error) {
     console.error('No se pudo generar Excel:', error);
@@ -1241,6 +1278,10 @@ function bindEvents() {
   $('#checkout-btn').addEventListener('click', openCheckoutModal);
   $('#new-store-btn').addEventListener('click', () => openStoreModal());
   $('#new-user-btn').addEventListener('click', () => openUserModal());
+  $('#history-event-select').addEventListener('change', (event) => {
+    selectedReportEventId = event.target.value;
+    renderHistory();
+  });
   $('#export-sales').addEventListener('click', exportSales);
   $('#receipt-logo-input').addEventListener('change', (event) => {
     const [file] = event.currentTarget.files;

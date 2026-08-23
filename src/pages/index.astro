@@ -184,8 +184,11 @@ import '../styles/global.css';
 
         <section id="view-history" class="view content-view">
           <div class="section-toolbar">
-            <div><h2>Historial de ventas</h2><p>Consulta y vuelve a imprimir tickets.</p></div>
-            <button id="export-sales" class="secondary-btn fit" type="button">↓ Exportar Excel</button>
+            <div><h2>Reporte de ventas</h2><p>Ventas cerradas por evento y tienda.</p></div>
+            <div class="history-actions">
+              <label class="report-picker"><span>Evento cerrado</span><select id="history-event-select" aria-label="Seleccionar evento cerrado"></select></label>
+              <button id="export-sales" class="secondary-btn fit" type="button">↓ Exportar Excel</button>
+            </div>
           </div>
           <div class="stats-grid history-stats" id="history-stats"></div>
           <div class="data-card">

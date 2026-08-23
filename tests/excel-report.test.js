@@ -6,11 +6,13 @@ import { buildSalesWorkbook, buildSettlementWorkbook } from '../src/lib/excel-re
 const sales = [
   {
     number: '00001', eventId: 'event-1', payment: 'EFECTIVO', total: 32,
+    sessionId: 'session-1', cashier: 'Flor',
     createdAt: '2026-08-22T20:00:00.000Z', customer: 'Cliente general',
     store: { name: 'La Cueva del Parrillero' }, items: [{ name: 'Bife', qty: 1, price: 32 }],
   },
   {
     number: '00002', eventId: 'event-1', payment: 'YAPE', total: 4,
+    sessionId: 'session-1', cashier: 'Flor',
     createdAt: '2026-08-22T20:05:00.000Z', customer: 'Mesa 2',
     store: { name: 'NellyMarket' }, items: [{ name: 'Energizante', qty: 1, price: 4 }],
   },
@@ -35,11 +37,15 @@ test('genera Excel de cuadre sin tarjeta', async () => {
       { storeName: 'La Cueva del Parrillero', saleCount: 1, salesTotal: 32, payments: { EFECTIVO: 32, YAPE: 0 } },
       { storeName: 'NellyMarket', saleCount: 1, salesTotal: 4, payments: { EFECTIVO: 0, YAPE: 4 } },
     ],
+    sessions: [
+      { cashier: 'Flor', openedAt: '2026-08-22T19:00:00Z', closedAt: '2026-08-22T21:00:00Z', saleCount: 2, salesTotal: 36, payments: { EFECTIVO: 32, YAPE: 4 }, openingCash: 100, expectedCash: 132, countedCash: 132, difference: 0 },
+    ],
   };
   const buffer = await buildSettlementWorkbook({ event: { id: 'event-1', name: 'Evento QA' }, settlement, sales, businessName: 'Mesa Clara' });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
-  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Cuadre del evento', 'Ventas', 'Detalle productos']);
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Cuadre del evento', 'Ventas', 'Cajas', 'Detalle productos']);
+  assert.equal(workbook.getWorksheet('Cajas').getCell('B6').value, 'Flor');
   const headings = workbook.getWorksheet('Cuadre del evento').getRow(10).values.join(' ');
   assert.equal(headings.includes('Tarjeta'), false);
   assert.match(headings, /Efectivo/);

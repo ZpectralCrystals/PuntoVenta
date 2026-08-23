@@ -123,6 +123,8 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
       sale.payment,
       sale.items.reduce((sum, item) => sum + Number(item.qty || 0), 0),
       Number(sale.total || 0),
+      sale.cashier || 'Sin cajera',
+      sale.sessionId || 'Sin caja',
     ];
   });
   sheet.addTable({
@@ -140,6 +142,8 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
       { name: 'Pago' },
       { name: 'Unidades' },
       { name: 'Total' },
+      { name: 'Cajera' },
+      { name: 'Caja ID' },
     ],
     rows,
   });
@@ -151,6 +155,8 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
   sheet.getColumn(6).width = 14;
   sheet.getColumn(7).width = 11;
   sheet.getColumn(8).width = 15;
+  sheet.getColumn(9).width = 22;
+  sheet.getColumn(10).width = 24;
   const firstDataRow = startRow + 1;
   const lastDataRow = Math.max(firstDataRow, startRow + rows.length);
   for (let row = firstDataRow; row <= lastDataRow; row += 1) {
@@ -159,7 +165,7 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
     sheet.getCell(row, 7).numFmt = '#,##0';
     sheet.getCell(row, 8).numFmt = currencyFormat;
   }
-  eachCell(sheet, startRow, 1, lastDataRow, 8, (cell) => { cell.font = { name: 'Aptos', size: 10 }; });
+  eachCell(sheet, startRow, 1, lastDataRow, 10, (cell) => { cell.font = { name: 'Aptos', size: 10 }; });
   sheet.getRow(startRow).height = 24;
   return { firstDataRow, lastDataRow };
 }
@@ -196,6 +202,43 @@ function addProductDetailSheet(workbook, sales) {
     sheet.getCell(row, 7).numFmt = currencyFormat;
   }
   sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  return sheet;
+}
+
+function addSessionsSheet(workbook, sessions = []) {
+  const sheet = workbook.addWorksheet('Cajas', { properties: { tabColor: { argb: COLORS.amber } } });
+  setCommonSheetOptions(sheet, 5);
+  styleTitle(sheet, 'Sesiones de caja', 'Cada apertura y cierre incluido en el evento', 'L');
+  const rows = sessions.map((session, index) => [
+    index + 1,
+    session.cashier,
+    session.openedAt ? new Date(session.openedAt) : null,
+    session.closedAt ? new Date(session.closedAt) : null,
+    session.saleCount,
+    session.salesTotal,
+    session.payments.EFECTIVO,
+    session.payments.YAPE,
+    session.openingCash,
+    session.expectedCash,
+    session.countedCash,
+    session.difference,
+  ]);
+  sheet.addTable({
+    name: 'CajasEventoTable',
+    ref: 'A5',
+    headerRow: true,
+    totalsRow: false,
+    style: { theme: 'TableStyleMedium4', showRowStripes: true },
+    columns: ['Caja', 'Cajera', 'Apertura', 'Cierre', 'Tickets', 'Venta total', 'Efectivo', 'Yape', 'Fondo inicial', 'Efectivo esperado', 'Efectivo contado', 'Diferencia'].map((name) => ({ name })),
+    rows,
+  });
+  [9, 22, 20, 20, 11, 15, 15, 15, 15, 18, 18, 15].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  for (let row = 6; row <= 5 + rows.length; row += 1) {
+    sheet.getCell(row, 3).numFmt = 'dd/mm/yyyy hh:mm AM/PM';
+    sheet.getCell(row, 4).numFmt = 'dd/mm/yyyy hh:mm AM/PM';
+    sheet.getCell(row, 5).numFmt = '#,##0';
+    for (let column = 6; column <= 12; column += 1) sheet.getCell(row, column).numFmt = currencyFormat;
+  }
   return sheet;
 }
 
@@ -295,6 +338,7 @@ export async function buildSettlementWorkbook({ event, settlement, sales, busine
   styleTitle(salesSheet, `Ventas · ${event.name}`, 'Detalle completo de tickets del evento');
   addSalesTable(salesSheet, sales, 5, 'VentasEventoTable');
   salesSheet.views = [{ state: 'frozen', ySplit: 5, showGridLines: false }];
+  addSessionsSheet(workbook, settlement.sessions || []);
   addProductDetailSheet(workbook, sales);
   return workbook.xlsx.writeBuffer();
 }

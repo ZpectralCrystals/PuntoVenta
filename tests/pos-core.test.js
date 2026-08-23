@@ -54,12 +54,12 @@ test('resume caja por método de pago', () => {
 test('genera cuadre consolidado de evento por tienda', () => {
   const stores = [{ id: 'a', name: 'Tienda A' }, { id: 'b', name: 'Tienda B' }];
   const sessions = [
-    { id: 's1', eventId: 'e1', scope: 'festival', openingAmount: 100, closingAmount: 145, closedAt: '2026-01-01' },
+    { id: 's1', eventId: 'e1', scope: 'festival', cashier: 'Flor', openingAmount: 100, closingAmount: 145, openedAt: '2026-01-01T08:00:00Z', closedAt: '2026-01-01T12:00:00Z' },
   ];
   const sales = [
-    { eventId: 'e1', storeId: 'a', payment: 'EFECTIVO', total: 40 },
-    { eventId: 'e1', storeId: 'a', payment: 'YAPE', total: 20 },
-    { eventId: 'e1', storeId: 'b', payment: 'YAPE', total: 30 },
+    { eventId: 'e1', sessionId: 's1', storeId: 'a', payment: 'EFECTIVO', total: 40 },
+    { eventId: 'e1', sessionId: 's1', storeId: 'a', payment: 'YAPE', total: 20 },
+    { eventId: 'e1', sessionId: 's1', storeId: 'b', payment: 'YAPE', total: 30 },
   ];
   const result = eventSettlement({ id: 'e1' }, stores, sessions, sales);
   assert.equal(result.saleCount, 3);
@@ -68,4 +68,10 @@ test('genera cuadre consolidado de evento por tienda', () => {
   assert.equal(result.countedCash, 145);
   assert.equal(result.difference, 5);
   assert.deepEqual(result.payments, { EFECTIVO: 40, YAPE: 50 });
+  assert.equal(result.sessions.length, 1);
+  assert.deepEqual(result.sessions[0], {
+    id: 's1', cashier: 'Flor', openedAt: '2026-01-01T08:00:00Z', closedAt: '2026-01-01T12:00:00Z',
+    saleCount: 3, salesTotal: 90, payments: { EFECTIVO: 40, YAPE: 50 },
+    openingCash: 100, expectedCash: 140, countedCash: 145, difference: 5,
+  });
 });
