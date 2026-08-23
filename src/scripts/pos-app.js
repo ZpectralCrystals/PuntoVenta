@@ -38,6 +38,8 @@ let remoteBaseState = structuredClone(state);
 let refreshInFlight = false;
 let saveRetryTimer;
 let saveRetryDelay = 3_000;
+let pendingLogoRemoval = false;
+let logoPreviewUrl = '';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -657,6 +659,32 @@ function renderSettings() {
   Object.entries(state.settings).forEach(([key, value]) => {
     if (form.elements[key]) form.elements[key].value = value;
   });
+  renderLogoPreview(state.settings.receiptLogo);
+}
+
+function renderLogoPreview(url) {
+  const preview = $('#receipt-logo-preview');
+  if (!preview) return;
+  preview.innerHTML = url ? `<img src="${esc(url)}" alt="Vista previa del logo" />` : '<small>Sin logo</small>';
+}
+
+function fileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('No se pudo leer imagen'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadReceiptLogo(file) {
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('Usa PNG, JPG o WebP');
+  if (file.size > 1024 * 1024) throw new Error('Logo debe pesar máximo 1 MB');
+  return apiRequest('/api/logo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dataUrl: await fileDataUrl(file) }),
+  });
 }
 
 function switchView(view) {
@@ -1098,6 +1126,7 @@ function ticketMarkup(sale, copy = 'customer', includeActions = false) {
   const label = isCustomer ? 'TICKET CLIENTE' : `TICKET · ${sale.store.name.toUpperCase()}`;
   return `<section class="ticket-preview">
     <header>
+      ${sale.business.receiptLogo ? `<img class="ticket-logo" src="${esc(sale.business.receiptLogo)}" alt="Logo" />` : ''}
       <h3>${esc(sale.business.businessName)}</h3>
       <div>${esc(sale.store.name)}</div>
       <small>${esc(sale.store.address || '')}</small>
@@ -1185,12 +1214,50 @@ function bindEvents() {
   $('#new-store-btn').addEventListener('click', () => openStoreModal());
   $('#new-user-btn').addEventListener('click', () => openUserModal());
   $('#export-sales').addEventListener('click', exportSales);
-  $('#settings-form').addEventListener('submit', (event) => {
+  $('#receipt-logo-input').addEventListener('change', (event) => {
+    const [file] = event.currentTarget.files;
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+      event.currentTarget.value = '';
+      return showToast(file.size > 1024 * 1024 ? 'Logo supera 1 MB' : 'Formato no permitido');
+    }
+    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    logoPreviewUrl = URL.createObjectURL(file);
+    pendingLogoRemoval = false;
+    renderLogoPreview(logoPreviewUrl);
+  });
+  $('#remove-receipt-logo').addEventListener('click', () => {
+    $('#receipt-logo-input').value = '';
+    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    logoPreviewUrl = '';
+    pendingLogoRemoval = true;
+    renderLogoPreview('');
+  });
+  $('#settings-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    state.settings = { ...state.settings, ...Object.fromEntries(new FormData(event.currentTarget)) };
-    saveState();
-    renderAll();
-    showToast('Ajustes guardados');
+    const form = event.currentTarget;
+    const button = form.querySelector('[type="submit"]');
+    button.disabled = true;
+    button.textContent = 'Guardando…';
+    try {
+      const [file] = $('#receipt-logo-input').files;
+      let receiptLogo = pendingLogoRemoval ? '' : state.settings.receiptLogo || '';
+      if (file) receiptLogo = (await uploadReceiptLogo(file)).url;
+      state.settings = { ...state.settings, ...Object.fromEntries(new FormData(form)), receiptLogo };
+      pendingLogoRemoval = false;
+      $('#receipt-logo-input').value = '';
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+      logoPreviewUrl = '';
+      saveState();
+      renderAll();
+      showToast('Ajustes y logo guardados');
+    } catch (error) {
+      console.error('No se pudo guardar logo:', error);
+      showToast(error.message || 'No se pudo guardar logo');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Guardar ajustes';
+    }
   });
   bindOpenProductButtons();
   document.addEventListener('keydown', (event) => {

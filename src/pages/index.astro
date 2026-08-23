@@ -206,6 +206,13 @@ import '../styles/global.css';
               <label>Nombre comercial<input name="businessName" required maxlength="80" /></label>
               <label>RUC<input name="ruc" maxlength="20" /></label>
               <label>Pie del ticket<textarea name="receiptFooter" rows="3" maxlength="160"></textarea></label>
+              <div class="logo-field">
+                <span>Logo del ticket</span>
+                <div id="receipt-logo-preview" class="logo-preview"><small>Sin logo</small></div>
+                <input id="receipt-logo-input" type="file" accept="image/png,image/jpeg,image/webp" />
+                <div class="logo-actions"><label for="receipt-logo-input" class="secondary-btn fit">↑ Subir logo</label><button id="remove-receipt-logo" class="text-btn" type="button">Quitar</button></div>
+                <small>PNG, JPG o WebP · máximo 1 MB</small>
+              </div>
             </div>
             <div class="data-card form-card">
               <h3>Operación</h3>
