@@ -35,6 +35,7 @@ let mutationNumber = 0;
 let localDirty = false;
 let saveChain = Promise.resolve();
 let remoteBaseState = structuredClone(state);
+let pollInFlight = false;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -266,11 +267,12 @@ async function connectSharedState() {
 }
 
 async function pollSharedState() {
-  if (!syncReady || pendingWrites || document.hidden) return;
+  if (!syncReady || pendingWrites || pollInFlight || document.hidden) return;
   if (localDirty) {
     queueRemoteSave();
     return;
   }
+  pollInFlight = true;
   try {
     const payload = await fetchSharedState();
     remoteEnabled = true;
@@ -293,6 +295,8 @@ async function pollSharedState() {
     if (remoteEnabled) console.warn('Se perdió conexión con la base compartida:', error);
     remoteEnabled = false;
     setSyncStatus('Sin red · copia local', 'offline');
+  } finally {
+    pollInFlight = false;
   }
 }
 
@@ -1189,7 +1193,7 @@ async function initializeApp() {
   await connectSharedState();
   renderAll();
   if (!currentUser) openLoginModal();
-  window.setInterval(pollSharedState, 1200);
+  window.setInterval(pollSharedState, 10_000);
   window.addEventListener('focus', pollSharedState);
 }
 
