@@ -2,10 +2,14 @@ import {
   addToCart,
   calculateChange,
   cashierOperationalSales,
+  cashRegisterCode,
   cartCount,
   cartSubtotal,
   eventSettlement,
   money,
+  nextCashNumber,
+  nextSessionSaleNumber,
+  saleReference,
   sessionSummary,
   updateCartQty,
 } from '../lib/pos-core.js';
@@ -831,7 +835,7 @@ function renderHistory() {
     <div class="stat-card payment-stat yape-stat"><span>YAPE</span><strong>${money(yape)}</strong><small>${total ? ((yape / total) * 100).toFixed(1) : '0.0'}% del total</small></div>`;
   $('#history-table').innerHTML = sales.length ? sales.map((sale) => `
     <tr>
-      <td><strong>#${esc(sale.number)}</strong></td><td>${formatDate(sale.createdAt)}</td>
+      <td><strong>${esc(saleReference(sale))}</strong></td><td>${formatDate(sale.createdAt)}</td>
       <td>${esc(sale.store?.name || 'Sin tienda')}</td><td>${esc(sale.customer || 'Cliente general')}</td><td><span class="badge">${esc(sale.payment)}</span></td>
       <td>${sale.items.reduce((sum, item) => sum + item.qty, 0)}</td><td><strong>${money(sale.total)}</strong></td>
       <td><div class="row-actions"><button data-reprint="${sale.id}" type="button" title="Reimprimir ticket">⌑</button></div></td>
@@ -1168,7 +1172,7 @@ function settlementMarkup(event) {
     </tbody></table></div>
     <h4>Sesiones de caja</h4>
     <div class="table-wrap"><table><thead><tr><th>Caja</th><th>Cajera</th><th>Apertura</th><th>Cierre</th><th>Tickets</th><th>Total</th><th>Efectivo</th><th>Yape</th><th>Diferencia</th></tr></thead><tbody>
-      ${settlement.sessions.map((session, index) => `<tr><td><strong>#${index + 1}</strong></td><td>${esc(session.cashier)}</td><td>${formatDate(session.openedAt)}</td><td>${session.closedAt ? formatDate(session.closedAt) : 'Abierta'}</td><td>${session.saleCount}</td><td>${money(session.salesTotal)}</td><td>${money(session.payments.EFECTIVO)}</td><td>${money(session.payments.YAPE)}</td><td>${money(session.difference)}</td></tr>`).join('')}
+      ${settlement.sessions.map((session) => `<tr><td><strong>#${esc(session.cashCode)}</strong></td><td>${esc(session.cashier)}</td><td>${formatDate(session.openedAt)}</td><td>${session.closedAt ? formatDate(session.closedAt) : 'Abierta'}</td><td>${session.saleCount}</td><td>${money(session.salesTotal)}</td><td>${money(session.payments.EFECTIVO)}</td><td>${money(session.payments.YAPE)}</td><td>${money(session.difference)}</td></tr>`).join('')}
     </tbody></table></div>
     <footer><div><span>Fondo inicial</span><strong>${money(settlement.openingCash)}</strong></div><div><span>Efectivo esperado</span><strong>${money(settlement.expectedCash)}</strong></div><div><span>Efectivo contado</span><strong>${money(settlement.countedCash)}</strong></div><div><span>Diferencia final</span><strong>${money(settlement.difference)}</strong></div></footer>
   </section>`;
@@ -1229,7 +1233,9 @@ function openCashModal() {
   $('#open-cash-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const amount = Number(new FormData(event.currentTarget).get('openingAmount'));
-    state.sessions.push({ id: uid('session'), eventId: currentEvent().id, scope: 'festival', userId: currentUser.id, cashier: currentUser.name, openingAmount: amount, openedAt: new Date().toISOString(), closedAt: null });
+    const eventId = currentEvent().id;
+    const cashNumber = nextCashNumber(state.sessions, eventId);
+    state.sessions.push({ id: uid('session'), eventId, cashNumber, cashCode: cashRegisterCode(cashNumber), scope: 'festival', userId: currentUser.id, cashier: currentUser.name, openingAmount: amount, openedAt: new Date().toISOString(), closedAt: null });
     saveState();
     closeModal();
     renderAll();
@@ -1306,14 +1312,20 @@ function completeSale(event) {
   const received = paymentMethod === 'EFECTIVO' ? Number(new FormData(event.currentTarget).get('received')) : total;
   if (paymentMethod === 'EFECTIVO' && received < total) return showToast('Efectivo recibido insuficiente');
   const store = currentStore();
+  const session = currentSession();
+  const cashNumber = Number(session.cashNumber) || nextCashNumber(state.sessions.filter((item) => item.id !== session.id), currentEvent().id);
+  const cashCode = session.cashCode || cashRegisterCode(cashNumber);
+  if (!session.cashNumber || !session.cashCode) Object.assign(session, { cashNumber, cashCode });
   const sale = {
     id: uid('sale'),
-    number: String(Math.max(0, ...state.sales.map((item) => Number(item.number) || 0)) + 1).padStart(5, '0'),
+    number: nextSessionSaleNumber(state.sales, session.id),
+    cashNumber,
+    cashCode,
     eventId: currentEvent().id,
     storeId: selectedStoreId,
     store: { name: store.name, address: store.address, phone: store.phone },
     business: { ...state.settings },
-    sessionId: currentSession().id,
+    sessionId: session.id,
     userId: currentUser.id,
     cashier: currentUser.name,
     customer: $('#customer-name').value.trim(),
@@ -1331,7 +1343,7 @@ function completeSale(event) {
   $('#customer-name').value = '';
   renderAll();
   openTicketModal(sale);
-  showToast(`Venta #${sale.number} registrada`);
+  showToast(`Venta ${saleReference(sale)} registrada`);
 }
 
 function ticketMarkup(sale, copy = 'customer', includeActions = false) {
@@ -1348,7 +1360,7 @@ function ticketMarkup(sale, copy = 'customer', includeActions = false) {
       ${isCustomer ? '<small>Comprobante interno de venta</small>' : '<small>Copia tienda / cocina</small>'}
     </header>
     <div class="ticket-rule"></div>
-    <div class="ticket-row"><span>Venta</span><strong>#${esc(sale.number)}</strong></div>
+    <div class="ticket-row"><span>Venta</span><strong>${esc(saleReference(sale))}</strong></div>
     <div class="ticket-row"><span>Fecha</span><span>${formatDate(sale.createdAt)}</span></div>
     <div class="ticket-row"><span>Cajero</span><span>${esc(sale.cashier)}</span></div>
     <div class="ticket-row"><span>Cliente</span><span>${esc(sale.customer || 'Cliente general')}</span></div>
@@ -1358,7 +1370,7 @@ function ticketMarkup(sale, copy = 'customer', includeActions = false) {
     <div class="ticket-row total"><span>TOTAL</span><strong>${money(sale.total)}</strong></div>
     <div class="ticket-row"><span>Pago</span><span>${esc(sale.payment)}</span></div>
     ${sale.payment === 'EFECTIVO' ? `<div class="ticket-row"><span>Recibido</span><span>${money(sale.received)}</span></div><div class="ticket-row"><span>Vuelto</span><span>${money(sale.change)}</span></div>` : ''}
-    <footer class="ticket-footer"><strong>${isCustomer ? esc(sale.business.receiptFooter) : `PEDIDO #${esc(sale.number)}`}</strong><small>${isCustomer ? `RUC ${esc(sale.business.ruc || '—')}` : 'Verificar productos antes de entregar'}</small></footer>
+    <footer class="ticket-footer"><strong>${isCustomer ? esc(sale.business.receiptFooter) : `PEDIDO ${esc(saleReference(sale))}`}</strong><small>${isCustomer ? `RUC ${esc(sale.business.ruc || '—')}` : 'Verificar productos antes de entregar'}</small></footer>
     ${includeActions ? `<div class="ticket-actions"><button class="secondary-btn" data-print-copy="customer" type="button">Imprimir cliente</button><button class="primary-btn" data-print-copy="store" type="button">Imprimir tienda</button></div>` : ''}
   </section>`;
 }

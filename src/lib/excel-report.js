@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { cashRegisterCode, saleReference } from './pos-core.js';
 
 const COLORS = {
   ink: 'FF18251E',
@@ -115,7 +116,7 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
   const rows = sales.map((sale) => {
     const createdAt = new Date(sale.createdAt);
     return [
-      `#${sale.number}`,
+      saleReference(sale),
       createdAt,
       createdAt,
       sale.store?.name || 'Sin tienda',
@@ -175,7 +176,7 @@ function addProductDetailSheet(workbook, sales) {
   sheet.views = [{ state: 'frozen', ySplit: 4, showGridLines: false }];
   styleTitle(sheet, 'Detalle de productos', 'Una fila por producto vendido · valores listos para filtros y análisis', 'I');
   const rows = sales.flatMap((sale) => sale.items.map((item) => [
-    `#${sale.number}`,
+    saleReference(sale),
     new Date(sale.createdAt),
     sale.store?.name || 'Sin tienda',
     item.name,
@@ -210,7 +211,7 @@ function addSessionsSheet(workbook, sessions = []) {
   setCommonSheetOptions(sheet, 5);
   styleTitle(sheet, 'Sesiones de caja', 'Cada apertura y cierre incluido en el evento', 'L');
   const rows = sessions.map((session, index) => [
-    index + 1,
+    session.cashCode || cashRegisterCode(session.cashNumber || index + 1),
     session.cashier,
     session.openedAt ? new Date(session.openedAt) : null,
     session.closedAt ? new Date(session.closedAt) : null,

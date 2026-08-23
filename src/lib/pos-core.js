@@ -70,14 +70,38 @@ export function cashierOperationalSales(sales, userId, eventId, sessionId = null
     && (!sessionId || sale.sessionId === sessionId));
 }
 
+export function cashRegisterCode(cashNumber) {
+  return `CAJ${String(Math.max(1, Number(cashNumber) || 1)).padStart(2, '0')}`;
+}
+
+export function nextCashNumber(sessions, eventId) {
+  const eventSessions = sessions.filter((session) => session.eventId === eventId);
+  const highestAssigned = Math.max(0, ...eventSessions.map((session) => Number(session.cashNumber) || 0));
+  return Math.max(eventSessions.length, highestAssigned) + 1;
+}
+
+export function nextSessionSaleNumber(sales, sessionId) {
+  return String(Math.max(0, ...sales
+    .filter((sale) => sale.sessionId === sessionId)
+    .map((sale) => Number(sale.number) || 0)) + 1).padStart(5, '0');
+}
+
+export function saleReference(sale) {
+  const cashCode = sale.cashCode || (sale.cashNumber ? cashRegisterCode(sale.cashNumber) : '');
+  return cashCode ? `#${cashCode} - #${sale.number}` : `#${sale.number}`;
+}
+
 export function eventSettlement(event, stores, sessions, sales) {
   const eventSessions = sessions.filter((session) => session.eventId === event?.id);
   const eventSales = sales.filter((sale) => sale.eventId === event?.id);
-  const sessionRows = eventSessions.map((session) => {
+  const sessionRows = eventSessions.map((session, index) => {
     const summary = sessionSummary(session, eventSales);
     const countedCash = session.closedAt ? Number(session.closingAmount || 0) : null;
+    const cashNumber = Number(session.cashNumber) || index + 1;
     return {
       id: session.id,
+      cashNumber,
+      cashCode: session.cashCode || cashRegisterCode(cashNumber),
       cashier: session.cashier || 'Sin cajera',
       openedAt: session.openedAt,
       closedAt: session.closedAt || null,
