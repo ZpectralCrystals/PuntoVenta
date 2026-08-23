@@ -3,13 +3,15 @@ import { hashPassword } from '../server/cloud-store.mjs';
 import { INITIAL_STATE } from '../src/lib/initial-state.js';
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('Faltan variables Supabase');
+if (!process.env.CLOUD_ADMIN_PASSWORD || !process.env.CLOUD_CASHIER_PASSWORD) throw new Error('Faltan claves iniciales CLOUD_ADMIN_PASSWORD/CLOUD_CASHIER_PASSWORD');
 
 const state = structuredClone(INITIAL_STATE);
 state.sessions = [];
 state.sales = [];
 state.events = [];
 state.users = state.users.map((user) => {
-  const next = { ...user, passwordHash: hashPassword(user.password) };
+  const password = user.role === 'admin' ? process.env.CLOUD_ADMIN_PASSWORD : process.env.CLOUD_CASHIER_PASSWORD;
+  const next = { ...user, passwordHash: hashPassword(password) };
   delete next.password;
   return next;
 });

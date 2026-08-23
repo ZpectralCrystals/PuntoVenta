@@ -676,7 +676,7 @@ function openLoginModal() {
         <p id="login-error" class="form-error" hidden>Usuario o clave incorrectos.</p>
         <button class="primary-btn login-submit" type="submit">Ingresar al sistema</button>
       </form>
-      <div class="login-demos"><p><strong>Admin demo</strong><span>admin / admin123</span></p><p><strong>Cajera demo</strong><span>flor / julio</span></p></div>
+      <div class="login-demos"><p><strong>Acceso privado</strong><span>Usa credenciales entregadas por administración.</span></p></div>
       <p class="login-security">🔒 Cerrar sesión no cierra caja central.</p>
     </section>
   </div>`);
