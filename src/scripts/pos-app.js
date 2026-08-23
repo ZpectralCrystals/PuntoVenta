@@ -776,9 +776,9 @@ function renderProductsTable() {
       <td><strong>${money(product.price)}</strong></td>
       <td><span class="badge ${product.active ? '' : 'off'}">${product.active ? 'Activo' : 'Oculto'}</span></td>
       <td><div class="row-actions">
-        <button data-toggle-product="${product.id}" type="button" title="${product.active ? 'Ocultar' : 'Activar'}">${product.active ? '◉' : '○'}</button>
-        <button data-edit-product="${product.id}" type="button" title="Editar">✎</button>
-        <button data-delete-product="${product.id}" type="button" title="Eliminar">×</button>
+        <button data-toggle-product="${product.id}" type="button" class="icon-action" title="${product.active ? 'Desactivar producto' : 'Activar producto'}" data-tooltip="${product.active ? 'Desactivar producto' : 'Activar producto'}" aria-label="${product.active ? 'Desactivar producto' : 'Activar producto'}">${product.active ? '◉' : '○'}</button>
+        <button data-edit-product="${product.id}" type="button" class="icon-action" title="Editar producto" data-tooltip="Editar producto" aria-label="Editar producto">✎</button>
+        <button data-delete-product="${product.id}" type="button" class="icon-action" title="Eliminar producto" data-tooltip="Eliminar producto" aria-label="Eliminar producto">×</button>
       </div></td>
     </tr>`).join('') : '<tr><td colspan="6"><div class="empty-state">No se encontraron productos.</div></td></tr>';
 
@@ -1127,18 +1127,34 @@ function openProductModal(productId) {
         <label class="field">Color<select name="color">${productColors.map((color, index) => `<option value="${color}" ${product?.color === color ? 'selected' : ''}>Color ${index + 1}</option>`).join('')}</select></label>
       </div>
       <div class="modal-actions"><button class="secondary-btn" data-close-modal type="button">Cancelar</button><button class="primary-btn" type="submit">${product ? 'Guardar cambios' : 'Crear producto'}</button></div>
+      <p id="product-form-error" class="form-error product-form-error" hidden></p>
     </form>
   </div>`);
-  $('#product-form').addEventListener('submit', (event) => {
+  $('#product-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const next = { name: data.name.trim(), category: data.category.trim(), sku: data.sku.trim(), price: Number(data.price), color: data.color };
+    const submitButton = $('button[type="submit"]', event.currentTarget);
+    const errorBox = $('#product-form-error');
+    const originalLabel = submitButton.textContent;
     if (product) Object.assign(product, next);
     else state.products.push({ id: uid('product'), storeId: selectedStoreId, active: true, ...next });
-    saveState();
-    closeModal();
-    renderAll();
-    showToast(product ? 'Producto actualizado' : 'Producto creado');
+    submitButton.disabled = true;
+    submitButton.textContent = 'Guardando…';
+    errorBox.hidden = true;
+    try {
+      const savePromise = saveState();
+      if (navigator.onLine && syncReady) await savePromise;
+      closeModal();
+      renderAll();
+      showToast(product ? 'Producto actualizado' : 'Producto creado');
+    } catch (error) {
+      console.warn('No se pudo guardar producto:', error);
+      submitButton.disabled = false;
+      submitButton.textContent = originalLabel;
+      errorBox.textContent = 'No se pudo confirmar en nube. Revisa conexión e intenta nuevamente.';
+      errorBox.hidden = false;
+    }
   });
 }
 
