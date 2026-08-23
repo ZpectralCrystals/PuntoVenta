@@ -5,7 +5,9 @@ import {
   cashRegisterCode,
   cartCount,
   cartSubtotal,
+  compareSalesByReference,
   eventSettlement,
+  filterSalesByStore,
   money,
   nextCashNumber,
   nextSessionSaleNumber,
@@ -34,6 +36,7 @@ let currentUserId = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(
 let currentUser = authToken ? state.users.find((user) => user.id === currentUserId && user.active) || null : null;
 let selectedStoreId = state.stores[0]?.id || '';
 let selectedReportEventId = '';
+let selectedHistoryStoreId = 'all';
 let cart = [];
 let selectedCategory = 'Todos';
 let paymentMethod = 'EFECTIVO';
@@ -68,7 +71,8 @@ const reportEvent = () => closedEvents().find((event) => event.id === selectedRe
 const reportSales = () => {
   const event = reportEvent();
   if (!event) return [];
-  return activeSales().filter((sale) => sale.eventId === event.id && sale.storeId === selectedStoreId && (currentUser?.role === 'admin' || sale.userId === currentUser?.id));
+  const sales = activeSales().filter((sale) => sale.eventId === event.id && (currentUser?.role === 'admin' || sale.userId === currentUser?.id));
+  return filterSalesByStore(sales, selectedHistoryStoreId);
 };
 const formatDate = (date) => new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(date));
 
@@ -798,9 +802,9 @@ function renderHistory() {
       : '<option value="">Sin eventos cerrados</option>';
     selector.disabled = !events.length;
     event = reportEvent();
-    sales = reportSales();
+    sales = activeSales().filter((sale) => sale.eventId === event?.id && (currentUser?.role === 'admin' || sale.userId === currentUser?.id));
     scopeLabel = event?.name || 'SIN EVENTO';
-    emptyMessage = event ? 'Sin ventas para esta tienda en el evento seleccionado.' : 'Cierra un evento para habilitar su reporte final.';
+    emptyMessage = event ? 'Sin ventas en el evento seleccionado.' : 'Cierra un evento para habilitar su reporte final.';
   } else {
     reportActions.hidden = true;
     $('#history-title').textContent = 'Historial de caja';
@@ -824,7 +828,22 @@ function renderHistory() {
     }
   }
 
-  sales = [...sales].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (selectedHistoryStoreId !== 'all' && !state.stores.some((store) => store.id === selectedHistoryStoreId)) selectedHistoryStoreId = 'all';
+  const unfilteredSales = sales;
+  const historyStores = state.stores.map((store) => ({
+    ...store,
+    count: unfilteredSales.filter((sale) => sale.storeId === store.id).length,
+  }));
+  $('#history-store-tabs').innerHTML = [
+    `<button class="history-store-tab ${selectedHistoryStoreId === 'all' ? 'active' : ''}" data-history-store="all" aria-pressed="${selectedHistoryStoreId === 'all'}" type="button">Todo <span>${unfilteredSales.length}</span></button>`,
+    ...historyStores.map((store) => `<button class="history-store-tab ${selectedHistoryStoreId === store.id ? 'active' : ''}" data-history-store="${esc(store.id)}" aria-pressed="${selectedHistoryStoreId === store.id}" type="button">${esc(store.name)} <span>${store.count}</span></button>`),
+  ].join('');
+  const selectedHistoryStore = state.stores.find((store) => store.id === selectedHistoryStoreId);
+  sales = filterSalesByStore(unfilteredSales, selectedHistoryStoreId).sort(compareSalesByReference);
+  if (selectedHistoryStore) {
+    scopeLabel = `${scopeLabel} · ${selectedHistoryStore.name}`;
+    emptyMessage = `Sin ventas de ${selectedHistoryStore.name} en este historial.`;
+  }
   const total = sales.reduce((sum, sale) => sum + sale.total, 0);
   const cash = sales.filter((sale) => sale.payment === 'EFECTIVO').reduce((sum, sale) => sum + sale.total, 0);
   const yape = sales.filter((sale) => sale.payment === 'YAPE').reduce((sum, sale) => sum + sale.total, 0);
@@ -841,6 +860,10 @@ function renderHistory() {
       <td><div class="row-actions"><button data-reprint="${sale.id}" type="button" title="Reimprimir ticket">⌑</button></div></td>
     </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state">${emptyMessage}</div></td></tr>`;
   $('#export-sales').disabled = !isAdmin || !event || !sales.length;
+  $$('[data-history-store]').forEach((button) => button.addEventListener('click', () => {
+    selectedHistoryStoreId = button.dataset.historyStore;
+    renderHistory();
+  }));
   $$('[data-reprint]').forEach((button) => button.addEventListener('click', () => {
     const sale = state.sales.find((item) => item.id === button.dataset.reprint);
     if (sale) openTicketModal(sale);
@@ -1412,11 +1435,16 @@ async function exportSales() {
     const { buildSalesWorkbook, downloadWorkbook } = await import('../lib/excel-report.js');
     const buffer = await buildSalesWorkbook({
       sales,
-      storeName: currentStore()?.name,
+      storeName: selectedHistoryStoreId === 'all'
+        ? 'Todas las tiendas'
+        : state.stores.find((store) => store.id === selectedHistoryStoreId)?.name,
       eventName: event.name,
       businessName: state.settings.businessName,
     });
-    downloadWorkbook(buffer, `ventas-${event.name}-${currentStore()?.name || 'festival'}`);
+    const storeName = selectedHistoryStoreId === 'all'
+      ? 'todas-las-tiendas'
+      : state.stores.find((store) => store.id === selectedHistoryStoreId)?.name || 'festival';
+    downloadWorkbook(buffer, `ventas-${event.name}-${storeName}`);
     showToast('Excel generado correctamente');
   } catch (error) {
     console.error('No se pudo generar Excel:', error);

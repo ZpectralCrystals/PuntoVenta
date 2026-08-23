@@ -142,6 +142,11 @@ kbd { border: 1px solid #d4d5cf; background: #f0eee9; color: #747b76; padding: 2
 .section-toolbar h2 { font-size: 23px; margin-bottom: 3px; }
 .section-toolbar p { color: var(--muted); margin: 0; font-size: 13px; }
 .history-actions { display: flex; align-items: center; gap: 10px; }
+.history-store-tabs { display: flex; gap: 8px; overflow-x: auto; margin: -6px 0 18px; padding: 2px 0; scrollbar-width: none; }
+.history-store-tab { flex: 0 0 auto; min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 800; }
+.history-store-tab span { display: inline-grid; place-items: center; min-width: 21px; height: 21px; margin-left: 5px; padding: 0 6px; border-radius: 999px; background: #eeeee8; color: var(--ink); font-size: 10px; }
+.history-store-tab.active { border-color: var(--green); background: var(--green); color: white; }
+.history-store-tab.active span { background: rgba(255,255,255,.2); color: white; }
 .report-picker { min-width: 230px; border: 1px solid var(--line); background: var(--surface); border-radius: 11px; padding: 6px 10px; }
 .report-picker span { display: block; color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
 .report-picker select { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-weight: 700; font-size: 12px; }

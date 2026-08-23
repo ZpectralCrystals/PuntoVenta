@@ -8,7 +8,9 @@ import {
   cartSubtotal,
   cashierOperationalSales,
   cashRegisterCode,
+  compareSalesByReference,
   eventSettlement,
+  filterSalesByStore,
   nextCashNumber,
   nextSessionSaleNumber,
   saleReference,
@@ -84,6 +86,17 @@ test('numera cajas por evento y ventas por caja', () => {
   assert.equal(cashRegisterCode(2), 'CAJ02');
   assert.equal(saleReference({ cashCode: 'CAJ02', number: '00001' }), '#CAJ02 - #00001');
   assert.equal(saleReference({ number: '00007' }), '#00007');
+});
+
+test('filtra historial por tienda y ordena desde primer ticket', () => {
+  const sales = [
+    { id: 'v3', storeId: 'a', cashNumber: 2, number: '00001' },
+    { id: 'v2', storeId: 'b', cashNumber: 1, number: '00002' },
+    { id: 'v1', storeId: 'a', cashNumber: 1, number: '00001' },
+  ];
+  assert.deepEqual(filterSalesByStore(sales, 'all').map((sale) => sale.id), ['v3', 'v2', 'v1']);
+  assert.deepEqual(filterSalesByStore(sales, 'a').map((sale) => sale.id), ['v3', 'v1']);
+  assert.deepEqual([...sales].sort(compareSalesByReference).map((sale) => sale.id), ['v1', 'v2', 'v3']);
 });
 
 test('genera cuadre consolidado de evento por tienda', () => {

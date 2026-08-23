@@ -91,6 +91,18 @@ export function saleReference(sale) {
   return cashCode ? `#${cashCode} - #${sale.number}` : `#${sale.number}`;
 }
 
+export function filterSalesByStore(sales, storeId = 'all') {
+  return storeId === 'all' ? sales : sales.filter((sale) => sale.storeId === storeId);
+}
+
+export function compareSalesByReference(left, right) {
+  const cashDifference = (Number(left.cashNumber) || 1) - (Number(right.cashNumber) || 1);
+  if (cashDifference) return cashDifference;
+  const numberDifference = (Number(left.number) || 0) - (Number(right.number) || 0);
+  if (numberDifference) return numberDifference;
+  return new Date(left.createdAt || 0) - new Date(right.createdAt || 0);
+}
+
 export function eventSettlement(event, stores, sessions, sales) {
   const eventSessions = sessions.filter((session) => session.eventId === event?.id);
   const eventSales = sales.filter((sale) => sale.eventId === event?.id);
