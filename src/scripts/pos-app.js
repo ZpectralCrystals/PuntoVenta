@@ -1,6 +1,7 @@
 import {
   addToCart,
   calculateChange,
+  cashierOperationalSales,
   cartCount,
   cartSubtotal,
   eventSettlement,
@@ -776,30 +777,66 @@ function renderStores() {
 
 function renderHistory() {
   const events = closedEvents();
-  if (!events.some((event) => event.id === selectedReportEventId)) selectedReportEventId = events[0]?.id || '';
   const selector = $('#history-event-select');
-  selector.innerHTML = events.length
-    ? events.map((event) => `<option value="${event.id}" ${event.id === selectedReportEventId ? 'selected' : ''}>${esc(event.name)}</option>`).join('')
-    : '<option value="">Sin eventos cerrados</option>';
-  selector.disabled = !events.length;
-  const sales = [...reportSales()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const event = reportEvent();
+  const reportActions = $('#history-report-actions');
+  let event;
+  let sales;
+  let scopeLabel;
+  let emptyMessage;
+
+  if (isAdmin) {
+    reportActions.hidden = false;
+    $('#history-title').textContent = 'Reporte de ventas';
+    $('#history-description').textContent = 'Ventas cerradas por evento y tienda.';
+    if (!events.some((item) => item.id === selectedReportEventId)) selectedReportEventId = events[0]?.id || '';
+    selector.innerHTML = events.length
+      ? events.map((item) => `<option value="${item.id}" ${item.id === selectedReportEventId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')
+      : '<option value="">Sin eventos cerrados</option>';
+    selector.disabled = !events.length;
+    event = reportEvent();
+    sales = reportSales();
+    scopeLabel = event?.name || 'SIN EVENTO';
+    emptyMessage = event ? 'Sin ventas para esta tienda en el evento seleccionado.' : 'Cierra un evento para habilitar su reporte final.';
+  } else {
+    reportActions.hidden = true;
+    $('#history-title').textContent = 'Historial de caja';
+    event = currentEvent() || events[0] || null;
+    const session = currentSession();
+    const ownOpenSession = session?.userId === currentUser?.id ? session : null;
+    const sessionId = currentEvent() ? ownOpenSession?.id || null : null;
+    sales = cashierOperationalSales(activeSales(), currentUser?.id, event?.id, sessionId);
+    if (ownOpenSession) {
+      scopeLabel = `CAJA ACTUAL · ${event.name}`;
+      $('#history-description').textContent = `Sesión abierta · ${currentUser.name} · todas las tiendas.`;
+      emptyMessage = 'Aún no registraste ventas en esta sesión.';
+    } else if (currentEvent()) {
+      scopeLabel = `EVENTO ACTIVO · ${event.name}`;
+      $('#history-description').textContent = `Ventas propias de ${currentUser?.name || 'cajera'} · todas las cajas del evento.`;
+      emptyMessage = 'Aún no registraste ventas en este evento.';
+    } else {
+      scopeLabel = event ? `ÚLTIMO EVENTO · ${event.name}` : 'SIN EVENTO';
+      $('#history-description').textContent = 'Últimas ventas propias disponibles para reimpresión.';
+      emptyMessage = event ? 'No registraste ventas en el último evento.' : 'Aún no existen ventas para consultar.';
+    }
+  }
+
+  sales = [...sales].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const total = sales.reduce((sum, sale) => sum + sale.total, 0);
   const cash = sales.filter((sale) => sale.payment === 'EFECTIVO').reduce((sum, sale) => sum + sale.total, 0);
   const yape = sales.filter((sale) => sale.payment === 'YAPE').reduce((sum, sale) => sum + sale.total, 0);
   $('#history-stats').innerHTML = `
-    <div class="stat-card"><span>TICKETS · ${esc(event?.name || 'SIN EVENTO')}</span><strong>${sales.length}</strong></div>
+    <div class="stat-card"><span>TICKETS · ${esc(scopeLabel)}</span><strong>${sales.length}</strong></div>
     <div class="stat-card"><span>VENTA ACUMULADA</span><strong>${money(total)}</strong></div>
     <div class="stat-card payment-stat cash-stat"><span>EFECTIVO</span><strong>${money(cash)}</strong><small>${total ? ((cash / total) * 100).toFixed(1) : '0.0'}% del total</small></div>
     <div class="stat-card payment-stat yape-stat"><span>YAPE</span><strong>${money(yape)}</strong><small>${total ? ((yape / total) * 100).toFixed(1) : '0.0'}% del total</small></div>`;
   $('#history-table').innerHTML = sales.length ? sales.map((sale) => `
     <tr>
       <td><strong>#${esc(sale.number)}</strong></td><td>${formatDate(sale.createdAt)}</td>
-      <td>${esc(sale.customer || 'Cliente general')}</td><td><span class="badge">${esc(sale.payment)}</span></td>
+      <td>${esc(sale.store?.name || 'Sin tienda')}</td><td>${esc(sale.customer || 'Cliente general')}</td><td><span class="badge">${esc(sale.payment)}</span></td>
       <td>${sale.items.reduce((sum, item) => sum + item.qty, 0)}</td><td><strong>${money(sale.total)}</strong></td>
-      <td><div class="row-actions"><button data-reprint="${sale.id}" type="button" title="Imprimir">⌑</button></div></td>
-    </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state">${event ? 'Sin ventas para esta tienda en el evento seleccionado.' : 'Cierra un evento para habilitar su reporte final.'}</div></td></tr>`;
-  $('#export-sales').disabled = !event || !sales.length;
+      <td><div class="row-actions"><button data-reprint="${sale.id}" type="button" title="Reimprimir ticket">⌑</button></div></td>
+    </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state">${emptyMessage}</div></td></tr>`;
+  $('#export-sales').disabled = !isAdmin || !event || !sales.length;
   $$('[data-reprint]').forEach((button) => button.addEventListener('click', () => {
     const sale = state.sales.find((item) => item.id === button.dataset.reprint);
     if (sale) openTicketModal(sale);

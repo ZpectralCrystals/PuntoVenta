@@ -63,6 +63,13 @@ export function sessionSummary(session, sales) {
   };
 }
 
+export function cashierOperationalSales(sales, userId, eventId, sessionId = null) {
+  if (!userId || !eventId) return [];
+  return sales.filter((sale) => sale.userId === userId
+    && sale.eventId === eventId
+    && (!sessionId || sale.sessionId === sessionId));
+}
+
 export function eventSettlement(event, stores, sessions, sales) {
   const eventSessions = sessions.filter((session) => session.eventId === event?.id);
   const eventSales = sales.filter((sale) => sale.eventId === event?.id);

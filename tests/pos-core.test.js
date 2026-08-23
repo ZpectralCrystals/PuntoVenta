@@ -6,6 +6,7 @@ import {
   calculateChange,
   cartCount,
   cartSubtotal,
+  cashierOperationalSales,
   eventSettlement,
   sessionSummary,
   updateCartQty,
@@ -49,6 +50,17 @@ test('resume caja por método de pago', () => {
     expectedCash: 130,
     payments: { EFECTIVO: 30, YAPE: 20 },
   });
+});
+
+test('muestra historial operativo propio por sesión o evento', () => {
+  const sales = [
+    { id: 'v1', userId: 'flor', eventId: 'e1', sessionId: 's1' },
+    { id: 'v2', userId: 'flor', eventId: 'e1', sessionId: 's2' },
+    { id: 'v3', userId: 'otro', eventId: 'e1', sessionId: 's1' },
+    { id: 'v4', userId: 'flor', eventId: 'e2', sessionId: 's3' },
+  ];
+  assert.deepEqual(cashierOperationalSales(sales, 'flor', 'e1', 's1').map((sale) => sale.id), ['v1']);
+  assert.deepEqual(cashierOperationalSales(sales, 'flor', 'e1').map((sale) => sale.id), ['v1', 'v2']);
 });
 
 test('genera cuadre consolidado de evento por tienda', () => {
