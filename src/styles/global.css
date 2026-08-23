@@ -215,6 +215,28 @@ tbody tr:hover { background: #fbfaf6; }
 .checkout-total-card span { color: #afbeb4; font-size: 12px; }
 .checkout-total-card strong { font: 800 25px 'Manrope'; }
 .change-line { background: #f1f5f2; border-radius: 10px; padding: 11px; display: flex; justify-content: space-between; margin-top: 10px; color: var(--green); font-weight: 700; }
+.checkout-modal { width: min(580px, 100%); }
+.cash-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 14px 0 10px; }
+.cash-amounts > div { padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px; background: #f8f8f4; }
+.cash-amounts > div:last-child { background: var(--green-soft); border-color: #b8d7c1; }
+.cash-amounts span { display: block; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .05em; }
+.cash-amounts strong { display: block; margin-top: 3px; font: 800 22px 'Manrope'; color: var(--ink); }
+.cash-amounts > div:last-child strong { color: var(--green); }
+.cash-input-field input { min-height: 48px; font: 800 22px 'Manrope'; text-align: center; }
+.cash-shortfall { margin: 8px 0 0; color: var(--red); font-size: 12px; font-weight: 800; text-align: center; }
+.cash-quick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+.cash-quick { min-height: 58px; padding: 7px; border: 1px solid #b8cbbd; border-radius: 10px; background: linear-gradient(135deg, #f3fbf4, #d9efdd); color: #1d5d35; font-weight: 800; }
+.cash-quick span { margin-right: 3px; }
+.cash-quick strong { display: block; font-size: 14px; }
+.cash-quick.exact { background: linear-gradient(135deg, #edf0ff, #dce5fa); border-color: #bbc8e6; color: #2e4d91; }
+.cash-quick.bill-50 { background: linear-gradient(135deg, #fff4d8, #f8e1a9); border-color: #e8c777; color: #845415; }
+.cash-quick.bill-100, .cash-quick.bill-200 { background: linear-gradient(135deg, #f8e8ee, #efc8d6); border-color: #e2acbe; color: #8c3155; }
+.cash-quick.active { outline: 3px solid var(--green); outline-offset: 1px; transform: translateY(-1px); }
+.cash-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cash-keypad button { min-height: 55px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); font: 800 21px 'Manrope'; }
+.cash-keypad button:active, .cash-quick:active { transform: scale(.97); }
+.cash-keypad .cash-key-clear { color: var(--red); background: #fff4f4; font-size: 15px; }
+.cash-keypad .cash-key-delete { grid-column: 1 / -1; min-height: 47px; background: #f5f2ed; font-size: 17px; }
 .cash-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
 .cash-summary div { padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
 .cash-summary span { color: var(--muted); font-size: 10px; display: block; }

@@ -1381,7 +1381,8 @@ function openCheckoutModal() {
   }
   paymentMethod = 'EFECTIVO';
   const total = cartSubtotal(cart);
-  setModal(`<div class="modal">
+  const quickAmounts = [10, 20, 50, 100, 200];
+  setModal(`<div class="modal checkout-modal">
     <div class="modal-head"><div><h2>Cobrar pedido</h2><p>${cartCount(cart)} unidad${cartCount(cart) === 1 ? '' : 'es'} · ${esc(currentStore()?.name)}</p></div><button class="modal-close" data-close-modal type="button">×</button></div>
     <form id="checkout-form">
       <div class="modal-body">
@@ -1391,20 +1392,65 @@ function openCheckoutModal() {
           <button class="payment-tab" data-payment="YAPE" type="button">▣ Yape</button>
         </div>
         <div id="cash-fields">
-          <label class="field">Efectivo recibido (S/)<input id="received-input" name="received" type="number" min="${total.toFixed(2)}" step="0.01" value="${total.toFixed(2)}" required /></label>
-          <div class="change-line"><span>Vuelto</span><strong id="change-value">${money(0)}</strong></div>
+          <div class="cash-amounts" aria-live="polite"><div><span>RECIBIDO</span><strong id="received-value">${money(total)}</strong></div><div><span>VUELTO</span><strong id="change-value">${money(0)}</strong></div></div>
+          <label class="field cash-input-field">Monto recibido (S/)<input id="received-input" name="received" type="text" inputmode="decimal" autocomplete="off" value="${total.toFixed(2)}" required /></label>
+          <p id="cash-shortfall" class="cash-shortfall" hidden></p>
+          <div class="cash-quick-grid" aria-label="Billetes rápidos">
+            <button class="cash-quick exact" data-cash-quick="${total}" type="button">Exacto <strong>${money(total)}</strong></button>
+            ${quickAmounts.map((amount) => `<button class="cash-quick bill-${amount}" data-cash-quick="${amount}" type="button"><span>💵</span><strong>S/ ${amount}</strong></button>`).join('')}
+          </div>
+          <div class="cash-keypad" aria-label="Teclado numérico">
+            ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => `<button data-cash-key="${digit}" type="button">${digit}</button>`).join('')}
+            <button class="cash-key-clear" data-cash-key="clear" type="button">C</button><button data-cash-key="0" type="button">0</button><button data-cash-key="decimal" type="button">.</button>
+            <button class="cash-key-delete" data-cash-key="delete" type="button">⌫</button>
+          </div>
         </div>
       </div>
-      <div class="modal-actions"><button class="secondary-btn" data-close-modal type="button">Cancelar</button><button class="primary-btn" type="submit">Confirmar venta</button></div>
+      <div class="modal-actions"><button class="secondary-btn" data-close-modal type="button">Cancelar</button><button id="checkout-confirm" class="primary-btn" type="submit">Confirmar venta</button></div>
     </form>
   </div>`);
+  const input = $('#received-input');
+  const confirm = $('#checkout-confirm');
+  let keypadEdited = false;
+  const normalizeAmount = (value) => {
+    const raw = String(value || '').replace(',', '.').replace(/[^\d.]/g, '');
+    const [whole = '', ...decimal] = raw.split('.');
+    return `${whole || '0'}${decimal.length ? `.${decimal.join('').slice(0, 2)}` : ''}`;
+  };
+  const updateCash = (value = input.value) => {
+    input.value = normalizeAmount(value);
+    const received = Number(input.value) || 0;
+    const shortfall = Math.max(0, total - received);
+    $('#received-value').textContent = money(received);
+    $('#change-value').textContent = money(calculateChange(total, received));
+    $('#cash-shortfall').hidden = !shortfall;
+    $('#cash-shortfall').textContent = shortfall ? `Faltan ${money(shortfall)} para completar cobro` : '';
+    confirm.disabled = paymentMethod === 'EFECTIVO' && shortfall > 0;
+    $$('.cash-quick').forEach((button) => button.classList.toggle('active', Number(button.dataset.cashQuick) === received));
+  };
   $$('.payment-tab').forEach((button) => button.addEventListener('click', () => {
     paymentMethod = button.dataset.payment;
     $$('.payment-tab').forEach((item) => item.classList.toggle('active', item === button));
     $('#cash-fields').style.display = paymentMethod === 'EFECTIVO' ? 'block' : 'none';
     $('#received-input').required = paymentMethod === 'EFECTIVO';
+    confirm.disabled = false;
   }));
-  $('#received-input').addEventListener('input', (event) => { $('#change-value').textContent = money(calculateChange(total, event.target.value)); });
+  input.addEventListener('input', () => { keypadEdited = true; updateCash(); });
+  $$('.cash-quick').forEach((button) => button.addEventListener('click', () => {
+    keypadEdited = true;
+    updateCash(Number(button.dataset.cashQuick).toFixed(2));
+  }));
+  $$('[data-cash-key]').forEach((button) => button.addEventListener('click', () => {
+    const key = button.dataset.cashKey;
+    let value = input.value;
+    if (key === 'clear') value = '0';
+    else if (key === 'delete') value = value.length > 1 ? value.slice(0, -1) : '0';
+    else if (key === 'decimal') value = value.includes('.') ? value : `${value}.`;
+    else value = keypadEdited ? `${value === '0' ? '' : value}${key}` : key;
+    keypadEdited = true;
+    updateCash(value);
+  }));
+  updateCash();
   $('#checkout-form').addEventListener('submit', completeSale);
 }
 
