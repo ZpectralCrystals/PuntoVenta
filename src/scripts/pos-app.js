@@ -1124,9 +1124,10 @@ function completeSale(event) {
 function ticketMarkup(sale, copy = 'customer', includeActions = false) {
   const isCustomer = copy === 'customer';
   const label = isCustomer ? 'TICKET CLIENTE' : `TICKET · ${sale.store.name.toUpperCase()}`;
+  const receiptLogo = sale.business.receiptLogo || state.settings.receiptLogo;
   return `<section class="ticket-preview">
     <header>
-      ${sale.business.receiptLogo ? `<img class="ticket-logo" src="${esc(sale.business.receiptLogo)}" alt="Logo" />` : ''}
+      ${receiptLogo ? `<img class="ticket-logo" src="${esc(receiptLogo)}" alt="Logo" />` : ''}
       <h3>${esc(sale.business.businessName)}</h3>
       <div>${esc(sale.store.name)}</div>
       <small>${esc(sale.store.address || '')}</small>
