@@ -86,6 +86,7 @@ test('numera cajas por evento y ventas por caja', () => {
   assert.equal(cashRegisterCode(2), 'CAJ02');
   assert.equal(saleReference({ cashCode: 'CAJ02', number: '00001' }), '#CAJ02 - #00001');
   assert.equal(saleReference({ number: '00007' }), '#00007');
+  assert.equal(saleReference({ id: 'sale-abcdefgh', number: '', syncStatus: 'pending' }), 'PENDIENTE · ABCDEFGH');
 });
 
 test('filtra historial por tienda y ordena desde primer ticket', () => {

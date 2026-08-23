@@ -87,6 +87,10 @@ export function nextSessionSaleNumber(sales, sessionId) {
 }
 
 export function saleReference(sale) {
+  if (sale.syncStatus === 'pending' || !sale.number) {
+    const code = sale.offlineCode || String(sale.id || '').slice(-8).toUpperCase();
+    return `PENDIENTE · ${code}`;
+  }
   const cashCode = sale.cashCode || (sale.cashNumber ? cashRegisterCode(sale.cashNumber) : '');
   return cashCode ? `#${cashCode} - #${sale.number}` : `#${sale.number}`;
 }

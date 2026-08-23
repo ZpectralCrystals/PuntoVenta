@@ -126,6 +126,7 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
       Number(sale.total || 0),
       sale.cashier || 'Sin cajera',
       sale.sessionId || 'Sin caja',
+      sale.observation || '',
     ];
   });
   sheet.addTable({
@@ -145,6 +146,7 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
       { name: 'Total' },
       { name: 'Cajera' },
       { name: 'Caja ID' },
+      { name: 'Observación' },
     ],
     rows,
   });
@@ -158,6 +160,7 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
   sheet.getColumn(8).width = 15;
   sheet.getColumn(9).width = 22;
   sheet.getColumn(10).width = 24;
+  sheet.getColumn(11).width = 38;
   const firstDataRow = startRow + 1;
   const lastDataRow = Math.max(firstDataRow, startRow + rows.length);
   for (let row = firstDataRow; row <= lastDataRow; row += 1) {
@@ -166,7 +169,7 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
     sheet.getCell(row, 7).numFmt = '#,##0';
     sheet.getCell(row, 8).numFmt = currencyFormat;
   }
-  eachCell(sheet, startRow, 1, lastDataRow, 10, (cell) => { cell.font = { name: 'Aptos', size: 10 }; });
+  eachCell(sheet, startRow, 1, lastDataRow, 11, (cell) => { cell.font = { name: 'Aptos', size: 10 }; });
   sheet.getRow(startRow).height = 24;
   return { firstDataRow, lastDataRow };
 }
@@ -174,7 +177,7 @@ function addSalesTable(sheet, sales, startRow = 10, tableName = 'VentasTable') {
 function addProductDetailSheet(workbook, sales) {
   const sheet = workbook.addWorksheet('Detalle productos', { properties: { tabColor: { argb: COLORS.amber } } });
   sheet.views = [{ state: 'frozen', ySplit: 4, showGridLines: false }];
-  styleTitle(sheet, 'Detalle de productos', 'Una fila por producto vendido · valores listos para filtros y análisis', 'I');
+  styleTitle(sheet, 'Detalle de productos', 'Una fila por producto vendido · valores listos para filtros y análisis', 'J');
   const rows = sales.flatMap((sale) => sale.items.map((item) => [
     saleReference(sale),
     new Date(sale.createdAt),
@@ -185,6 +188,7 @@ function addProductDetailSheet(workbook, sales) {
     Number(item.qty || 0) * Number(item.price || 0),
     sale.payment,
     sale.customer || 'Cliente general',
+    sale.observation || '',
   ]));
   sheet.addTable({
     name: 'DetalleProductosTable',
@@ -192,10 +196,10 @@ function addProductDetailSheet(workbook, sales) {
     headerRow: true,
     totalsRow: false,
     style: { theme: 'TableStyleMedium4', showRowStripes: true },
-    columns: ['Venta', 'Fecha', 'Tienda', 'Producto', 'Cantidad', 'Precio unitario', 'Subtotal', 'Pago', 'Cliente'].map((name) => ({ name })),
+    columns: ['Venta', 'Fecha', 'Tienda', 'Producto', 'Cantidad', 'Precio unitario', 'Subtotal', 'Pago', 'Cliente', 'Observación'].map((name) => ({ name })),
     rows,
   });
-  [12, 18, 28, 42, 11, 16, 15, 14, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  [12, 18, 28, 42, 11, 16, 15, 14, 24, 38].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
   for (let row = 6; row <= 5 + rows.length; row += 1) {
     sheet.getCell(row, 2).numFmt = 'dd/mm/yyyy hh:mm AM/PM';
     sheet.getCell(row, 5).numFmt = '#,##0';
@@ -251,6 +255,7 @@ export async function buildSalesWorkbook({ sales, storeName, eventName, business
     sheet,
     'Reporte de ventas',
     `${businessName || 'Mesa Clara'} · ${storeName || 'Todas las tiendas'} · ${eventName || 'Histórico'} · Generado ${new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`,
+    'K',
   );
   const total = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const cash = sales.filter((sale) => sale.payment === 'EFECTIVO').reduce((sum, sale) => sum + Number(sale.total || 0), 0);
@@ -336,7 +341,7 @@ export async function buildSettlementWorkbook({ event, settlement, sales, busine
 
   const salesSheet = workbook.addWorksheet('Ventas', { properties: { tabColor: { argb: COLORS.blue } } });
   setCommonSheetOptions(salesSheet);
-  styleTitle(salesSheet, `Ventas · ${event.name}`, 'Detalle completo de tickets del evento');
+  styleTitle(salesSheet, `Ventas · ${event.name}`, 'Detalle completo de tickets del evento', 'K');
   addSalesTable(salesSheet, sales, 5, 'VentasEventoTable');
   salesSheet.views = [{ state: 'frozen', ySplit: 5, showGridLines: false }];
   addSessionsSheet(workbook, settlement.sessions || []);

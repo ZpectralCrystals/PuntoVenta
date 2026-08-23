@@ -27,6 +27,7 @@ test('genera Excel estructurado de ventas', async () => {
   assert.equal(workbook.getWorksheet('Resumen de ventas').getCell('C6').value, 36);
   assert.equal(workbook.getWorksheet('Resumen de ventas').getCell('E6').value, 32);
   assert.equal(workbook.getWorksheet('Resumen de ventas').getCell('G6').value, 4);
+  assert.equal(workbook.getWorksheet('Resumen de ventas').getRow(10).values.includes('Observación'), true);
 });
 
 test('genera Excel de cuadre sin tarjeta', async () => {

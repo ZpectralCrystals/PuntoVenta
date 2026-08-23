@@ -1,5 +1,6 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { appendCanonicalSale } from '../src/lib/sale-persistence.js';
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -105,15 +106,32 @@ export function prepareUsers(currentUsers, nextUsers) {
   });
 }
 
-export function restrictCashierState(current, incoming) {
-  return {
+export function restrictCashierState(current, incoming, actor) {
+  const currentSessions = new Map(current.sessions.map((session) => [session.id, session]));
+  const sessions = incoming.sessions.map((session) => {
+    const saved = currentSessions.get(session.id);
+    if (saved?.closedAt && !session.closedAt) return structuredClone(saved);
+    return structuredClone(session);
+  });
+  for (const session of current.sessions) {
+    if (!sessions.some((item) => item.id === session.id)) sessions.push(structuredClone(session));
+  }
+  let next = {
     ...incoming,
     settings: current.settings,
     users: current.users,
     stores: current.stores,
     products: current.products,
     events: current.events,
+    sessions,
+    sales: structuredClone(current.sales),
   };
+  const savedIds = new Set(current.sales.map((sale) => sale.id));
+  const additions = incoming.sales
+    .filter((sale) => !savedIds.has(sale.id))
+    .sort((left, right) => new Date(left.createdAt || 0) - new Date(right.createdAt || 0));
+  for (const draft of additions) next = appendCanonicalSale(next, draft, actor).state;
+  return next;
 }
 
 export function validState(state) {

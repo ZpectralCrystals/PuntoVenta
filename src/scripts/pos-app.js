@@ -10,7 +10,6 @@ import {
   filterSalesByStore,
   money,
   nextCashNumber,
-  nextSessionSaleNumber,
   saleReference,
   sessionSummary,
   updateCartQty,
@@ -143,8 +142,9 @@ function saveState() {
   localDirty = true;
   localStorage.setItem(DIRTY_KEY, '1');
   persistPendingState();
-  if (syncReady && navigator.onLine) queueRemoteSave();
-  else setPendingSyncStatus();
+  if (syncReady && navigator.onLine) return queueRemoteSave();
+  setPendingSyncStatus();
+  return Promise.resolve(null);
 }
 
 function queueOutboxAction(action) {
@@ -295,8 +295,9 @@ function mergeConcurrentState(baseValue, localValue, remoteValue) {
   return mergeOfflineState(base, local, remote);
 }
 
-async function pushSharedState(snapshot, savedMutation) {
-  let savedState = snapshot;
+async function pushSharedState(savedMutation) {
+  await syncPendingSales();
+  let savedState = structuredClone(state);
   let expectedRevision = remoteRevision;
   let payload;
   try {
@@ -308,21 +309,22 @@ async function pushSharedState(snapshot, savedMutation) {
   } catch (error) {
     if (error.status !== 409 || !error.payload?.state) throw error;
     const latest = error.payload;
-    savedState = mergeConcurrentState(remoteBaseState, snapshot, latest.state);
+    savedState = mergeConcurrentState(remoteBaseState, savedState, latest.state);
     expectedRevision = Number(latest.revision);
     payload = await apiRequest('/api/state', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: savedState, expectedRevision }),
     });
-    if (savedMutation === mutationNumber) state = remoteState(savedState);
-    else state = mergeConcurrentState(snapshot, state, savedState);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    renderAll();
   }
   remoteRevision = Number(payload.revision || remoteRevision);
-  remoteBaseState = remoteState(savedState);
+  const canonicalState = remoteState(payload.state || savedState);
+  if (savedMutation === mutationNumber) state = canonicalState;
+  else state = mergeConcurrentState(savedState, state, canonicalState);
+  remoteBaseState = canonicalState;
   persistRemoteBase();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  renderAll();
   remoteEnabled = true;
   if (savedMutation === mutationNumber) {
     localDirty = false;
@@ -333,6 +335,29 @@ async function pushSharedState(snapshot, savedMutation) {
   saveRetryDelay = 3_000;
   if (localDirty) setPendingSyncStatus();
   else setSyncStatus('Base compartida conectada', 'online');
+}
+
+async function syncPendingSales() {
+  while (true) {
+    const draft = state.sales
+      .filter((sale) => sale.syncStatus === 'pending')
+      .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))[0];
+    if (!draft) return;
+    const localState = structuredClone(state);
+    const payload = await apiRequest('/api/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sale: draft }),
+    });
+    const localWithoutSyncedSale = structuredClone(localState);
+    localWithoutSyncedSale.sales = localWithoutSyncedSale.sales.filter((sale) => sale.id !== draft.id);
+    state = mergeConcurrentState(remoteBaseState, localWithoutSyncedSale, payload.state);
+    remoteRevision = Number(payload.revision || remoteRevision);
+    remoteBaseState = remoteState(payload.state);
+    persistRemoteBase();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistPendingState();
+  }
 }
 
 function scheduleSaveRetry() {
@@ -348,14 +373,13 @@ function scheduleSaveRetry() {
 function queueRemoteSave() {
   if (!navigator.onLine) {
     setPendingSyncStatus();
-    return;
+    return Promise.resolve(null);
   }
-  const snapshot = structuredClone(state);
   const savedMutation = mutationNumber;
   pendingWrites += 1;
   setSyncStatus('Guardando en red…', 'saving');
-  saveChain = saveChain
-    .then(() => pushSharedState(snapshot, savedMutation))
+  const operation = saveChain.then(() => pushSharedState(savedMutation));
+  saveChain = operation
     .catch((error) => {
       remoteEnabled = false;
       console.warn('No se pudo guardar en la base compartida:', error);
@@ -363,6 +387,7 @@ function queueRemoteSave() {
       if (error.status !== 401) scheduleSaveRetry();
     })
     .finally(() => { pendingWrites -= 1; });
+  return operation;
 }
 
 async function connectSharedState() {
@@ -854,7 +879,7 @@ function renderHistory() {
     <div class="stat-card payment-stat yape-stat"><span>YAPE</span><strong>${money(yape)}</strong><small>${total ? ((yape / total) * 100).toFixed(1) : '0.0'}% del total</small></div>`;
   $('#history-table').innerHTML = sales.length ? sales.map((sale) => `
     <tr>
-      <td><strong>${esc(saleReference(sale))}</strong></td><td>${formatDate(sale.createdAt)}</td>
+      <td><strong>${esc(saleReference(sale))}</strong>${sale.observation ? `<small class="sale-observation">${esc(sale.observation)}</small>` : ''}</td><td>${formatDate(sale.createdAt)}</td>
       <td>${esc(sale.store?.name || 'Sin tienda')}</td><td>${esc(sale.customer || 'Cliente general')}</td><td><span class="badge">${esc(sale.payment)}</span></td>
       <td>${sale.items.reduce((sum, item) => sum + item.qty, 0)}</td><td><strong>${money(sale.total)}</strong></td>
       <td><div class="row-actions"><button data-reprint="${sale.id}" type="button" title="Reimprimir ticket">⌑</button></div></td>
@@ -1329,19 +1354,25 @@ function openCheckoutModal() {
   $('#checkout-form').addEventListener('submit', completeSale);
 }
 
-function completeSale(event) {
+async function completeSale(event) {
   event.preventDefault();
   const total = cartSubtotal(cart);
   const received = paymentMethod === 'EFECTIVO' ? Number(new FormData(event.currentTarget).get('received')) : total;
   if (paymentMethod === 'EFECTIVO' && received < total) return showToast('Efectivo recibido insuficiente');
+  const submit = event.currentTarget.querySelector('[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = 'Guardando venta…';
   const store = currentStore();
   const session = currentSession();
   const cashNumber = Number(session.cashNumber) || nextCashNumber(state.sessions.filter((item) => item.id !== session.id), currentEvent().id);
   const cashCode = session.cashCode || cashRegisterCode(cashNumber);
   if (!session.cashNumber || !session.cashCode) Object.assign(session, { cashNumber, cashCode });
+  const saleId = uid('sale');
   const sale = {
-    id: uid('sale'),
-    number: nextSessionSaleNumber(state.sales, session.id),
+    id: saleId,
+    number: '',
+    offlineCode: saleId.slice(-8).toUpperCase(),
+    syncStatus: 'pending',
     cashNumber,
     cashCode,
     eventId: currentEvent().id,
@@ -1358,19 +1389,33 @@ function completeSale(event) {
     payment: paymentMethod,
     received,
     change: calculateChange(total, received),
+    observation: '',
     createdAt: new Date().toISOString(),
   };
   state.sales.push(sale);
-  saveState();
+  const savePromise = saveState();
   cart = [];
   $('#customer-name').value = '';
   renderAll();
-  openTicketModal(sale);
-  showToast(`Venta ${saleReference(sale)} registrada`);
+  let savedSale = sale;
+  if (navigator.onLine && syncReady) {
+    try {
+      await savePromise;
+      savedSale = state.sales.find((item) => item.id === sale.id) || sale;
+    } catch (error) {
+      console.warn('Venta queda pendiente:', error);
+      savedSale = state.sales.find((item) => item.id === sale.id) || sale;
+    }
+  }
+  openTicketModal(savedSale);
+  showToast(savedSale.syncStatus === 'pending'
+    ? `Venta ${saleReference(savedSale)} guardada localmente`
+    : `Venta ${saleReference(savedSale)} confirmada`);
 }
 
 function ticketMarkup(sale, copy = 'customer', includeActions = false) {
   const isCustomer = copy === 'customer';
+  const isPending = sale.syncStatus === 'pending';
   const label = isCustomer ? 'TICKET CLIENTE' : `TICKET · ${sale.store.name.toUpperCase()}`;
   const receiptLogo = sale.business.receiptLogo || state.settings.receiptLogo;
   return `<section class="ticket-preview">
@@ -1381,6 +1426,7 @@ function ticketMarkup(sale, copy = 'customer', includeActions = false) {
       <small>${esc(sale.store.address || '')}</small>
       <div class="ticket-copy">${esc(label)}</div>
       ${isCustomer ? '<small>Comprobante interno de venta</small>' : '<small>Copia tienda / cocina</small>'}
+      ${isPending ? '<div class="ticket-copy">PENDIENTE DE SINCRONIZAR</div>' : ''}
     </header>
     <div class="ticket-rule"></div>
     <div class="ticket-row"><span>Venta</span><strong>${esc(saleReference(sale))}</strong></div>
@@ -1392,6 +1438,7 @@ function ticketMarkup(sale, copy = 'customer', includeActions = false) {
     <div class="ticket-rule"></div>
     <div class="ticket-row total"><span>TOTAL</span><strong>${money(sale.total)}</strong></div>
     <div class="ticket-row"><span>Pago</span><span>${esc(sale.payment)}</span></div>
+    ${sale.observation ? `<div class="ticket-row"><span>Observación</span><strong>${esc(sale.observation)}</strong></div>` : ''}
     ${sale.payment === 'EFECTIVO' ? `<div class="ticket-row"><span>Recibido</span><span>${money(sale.received)}</span></div><div class="ticket-row"><span>Vuelto</span><span>${money(sale.change)}</span></div>` : ''}
     <footer class="ticket-footer"><strong>${isCustomer ? esc(sale.business.receiptFooter) : `PEDIDO ${esc(saleReference(sale))}`}</strong><small>${isCustomer ? `RUC ${esc(sale.business.ruc || '—')}` : 'Verificar productos antes de entregar'}</small></footer>
     ${includeActions ? `<div class="ticket-actions"><button class="secondary-btn" data-print-copy="customer" type="button">Imprimir cliente</button><button class="primary-btn" data-print-copy="store" type="button">Imprimir tienda</button></div>` : ''}

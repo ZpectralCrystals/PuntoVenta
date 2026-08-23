@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     if (expectedRevision !== current.revision) return sendJson(res, 409, { error: 'Conflicto de revisión', ...publicPayload(current) });
 
     let nextState = structuredClone(body.state);
-    if (auth.user.role === 'cashier') nextState = restrictCashierState(current.state, nextState);
+    if (auth.user.role === 'cashier') nextState = restrictCashierState(current.state, nextState, auth.user);
     else nextState.users = prepareUsers(current.state.users, nextState.users);
 
     const updatedAt = new Date().toISOString();
@@ -24,7 +24,10 @@ export default async function handler(req, res) {
       .select('revision,updated_at').maybeSingle();
     if (error) throw error;
     if (!data) return sendJson(res, 409, { error: 'Conflicto de revisión', ...publicPayload(await readState(auth.db)) });
-    return sendJson(res, 200, { ok: true, revision: Number(data.revision), updatedAt: data.updated_at });
+    return sendJson(res, 200, {
+      ok: true,
+      ...publicPayload({ state: nextState, revision: Number(data.revision), updatedAt: data.updated_at }),
+    });
   } catch (error) {
     return sendJson(res, 500, { error: error.message || 'Error interno' });
   }
