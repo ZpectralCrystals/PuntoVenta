@@ -35,7 +35,9 @@ let mutationNumber = 0;
 let localDirty = false;
 let saveChain = Promise.resolve();
 let remoteBaseState = structuredClone(state);
-let pollInFlight = false;
+let refreshInFlight = false;
+let saveRetryTimer;
+let saveRetryDelay = 3_000;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -216,7 +218,20 @@ async function pushSharedState(snapshot, savedMutation) {
   remoteBaseState = remoteState(savedState);
   remoteEnabled = true;
   if (savedMutation === mutationNumber) localDirty = false;
+  clearTimeout(saveRetryTimer);
+  saveRetryTimer = null;
+  saveRetryDelay = 3_000;
   setSyncStatus('Base compartida conectada', 'online');
+}
+
+function scheduleSaveRetry() {
+  if (saveRetryTimer || !localDirty) return;
+  const delay = saveRetryDelay;
+  saveRetryDelay = Math.min(saveRetryDelay * 2, 30_000);
+  saveRetryTimer = window.setTimeout(() => {
+    saveRetryTimer = null;
+    if (localDirty && syncReady && !pendingWrites && navigator.onLine) queueRemoteSave();
+  }, delay);
 }
 
 function queueRemoteSave() {
@@ -230,6 +245,7 @@ function queueRemoteSave() {
       remoteEnabled = false;
       console.warn('No se pudo guardar en la base compartida:', error);
       setSyncStatus('Sin red · copia local', 'offline');
+      if (error.status !== 401) scheduleSaveRetry();
     })
     .finally(() => { pendingWrites -= 1; });
 }
@@ -266,13 +282,13 @@ async function connectSharedState() {
   }
 }
 
-async function pollSharedState() {
-  if (!syncReady || pendingWrites || pollInFlight || document.hidden) return;
+async function refreshSharedState() {
+  if (!syncReady || pendingWrites || refreshInFlight || document.hidden || !currentUser) return;
   if (localDirty) {
     queueRemoteSave();
     return;
   }
-  pollInFlight = true;
+  refreshInFlight = true;
   try {
     const payload = await fetchSharedState();
     remoteEnabled = true;
@@ -296,7 +312,7 @@ async function pollSharedState() {
     remoteEnabled = false;
     setSyncStatus('Sin red · copia local', 'offline');
   } finally {
-    pollInFlight = false;
+    refreshInFlight = false;
   }
 }
 
@@ -1193,8 +1209,8 @@ async function initializeApp() {
   await connectSharedState();
   renderAll();
   if (!currentUser) openLoginModal();
-  window.setInterval(pollSharedState, 10_000);
-  window.addEventListener('focus', pollSharedState);
+  window.addEventListener('focus', refreshSharedState);
+  window.addEventListener('online', refreshSharedState);
 }
 
 initializeApp();
