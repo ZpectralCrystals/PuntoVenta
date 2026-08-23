@@ -66,7 +66,14 @@ const currentSession = () => state.sessions.find((session) => session.eventId ==
 const storeProducts = () => state.products.filter((product) => product.storeId === selectedStoreId);
 const activeSales = () => state.sales.filter((sale) => !sale.excludedAt);
 const closedEvents = () => state.events.filter((event) => event.closedAt).sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
-const reportEvent = () => closedEvents().find((event) => event.id === selectedReportEventId);
+const reportEvents = () => [...state.events].sort((left, right) => {
+  if (Boolean(left.closedAt) !== Boolean(right.closedAt)) return left.closedAt ? 1 : -1;
+  const saleDifference = activeSales().filter((sale) => sale.eventId === right.id).length
+    - activeSales().filter((sale) => sale.eventId === left.id).length;
+  if (saleDifference) return saleDifference;
+  return new Date(right.openedAt || 0) - new Date(left.openedAt || 0);
+});
+const reportEvent = () => reportEvents().find((event) => event.id === selectedReportEventId);
 const reportSales = () => {
   const event = reportEvent();
   if (!event) return [];
@@ -809,7 +816,7 @@ function renderStores() {
 }
 
 function renderHistory() {
-  const events = closedEvents();
+  const events = isAdmin ? reportEvents() : closedEvents();
   const selector = $('#history-event-select');
   const reportActions = $('#history-report-actions');
   let event;
@@ -819,17 +826,19 @@ function renderHistory() {
 
   if (isAdmin) {
     reportActions.hidden = false;
-    $('#history-title').textContent = 'Reporte de ventas';
-    $('#history-description').textContent = 'Ventas cerradas por evento y tienda.';
+    $('#history-title').textContent = 'Historial de ventas';
     if (!events.some((item) => item.id === selectedReportEventId)) selectedReportEventId = events[0]?.id || '';
     selector.innerHTML = events.length
-      ? events.map((item) => `<option value="${item.id}" ${item.id === selectedReportEventId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')
-      : '<option value="">Sin eventos cerrados</option>';
+      ? events.map((item) => `<option value="${item.id}" ${item.id === selectedReportEventId ? 'selected' : ''}>${item.closedAt ? 'FINAL' : '● EN VIVO'} · ${esc(item.name)}</option>`).join('')
+      : '<option value="">Sin eventos</option>';
     selector.disabled = !events.length;
     event = reportEvent();
+    $('#history-description').textContent = event?.closedAt
+      ? 'Reporte final del evento cerrado.'
+      : 'Ventas en vivo · información provisional hasta cerrar evento.';
     sales = activeSales().filter((sale) => sale.eventId === event?.id && (currentUser?.role === 'admin' || sale.userId === currentUser?.id));
-    scopeLabel = event?.name || 'SIN EVENTO';
-    emptyMessage = event ? 'Sin ventas en el evento seleccionado.' : 'Cierra un evento para habilitar su reporte final.';
+    scopeLabel = event ? `${event.closedAt ? 'FINAL' : 'EN VIVO'} · ${event.name}` : 'SIN EVENTO';
+    emptyMessage = event ? 'Sin ventas en el evento seleccionado.' : 'Crea un evento para consultar ventas.';
   } else {
     reportActions.hidden = true;
     $('#history-title').textContent = 'Historial de caja';
@@ -872,6 +881,7 @@ function renderHistory() {
   const total = sales.reduce((sum, sale) => sum + sale.total, 0);
   const cash = sales.filter((sale) => sale.payment === 'EFECTIVO').reduce((sum, sale) => sum + sale.total, 0);
   const yape = sales.filter((sale) => sale.payment === 'YAPE').reduce((sum, sale) => sum + sale.total, 0);
+  $('#history-cashier-heading').hidden = !isAdmin;
   $('#history-stats').innerHTML = `
     <div class="stat-card"><span>TICKETS · ${esc(scopeLabel)}</span><strong>${sales.length}</strong></div>
     <div class="stat-card"><span>VENTA ACUMULADA</span><strong>${money(total)}</strong></div>
@@ -880,11 +890,12 @@ function renderHistory() {
   $('#history-table').innerHTML = sales.length ? sales.map((sale) => `
     <tr>
       <td><strong>${esc(saleReference(sale))}</strong>${sale.observation ? `<small class="sale-observation">${esc(sale.observation)}</small>` : ''}</td><td>${formatDate(sale.createdAt)}</td>
-      <td>${esc(sale.store?.name || 'Sin tienda')}</td><td>${esc(sale.customer || 'Cliente general')}</td><td><span class="badge">${esc(sale.payment)}</span></td>
+      <td>${esc(sale.store?.name || 'Sin tienda')}</td>${isAdmin ? `<td>${esc(sale.cashier || 'Sin cajero')}</td>` : ''}<td>${esc(sale.customer || 'Cliente general')}</td><td><span class="badge">${esc(sale.payment)}</span></td>
       <td>${sale.items.reduce((sum, item) => sum + item.qty, 0)}</td><td><strong>${money(sale.total)}</strong></td>
-      <td><div class="row-actions"><button data-reprint="${sale.id}" type="button" title="Reimprimir ticket">⌑</button></div></td>
-    </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state">${emptyMessage}</div></td></tr>`;
-  $('#export-sales').disabled = !isAdmin || !event || !sales.length;
+      <td><div class="row-actions"><button data-observation="${sale.id}" type="button" title="Agregar o editar observación">✎</button><button data-reprint="${sale.id}" type="button" title="Reimprimir ticket">⌑</button></div></td>
+    </tr>`).join('') : `<tr><td colspan="${isAdmin ? 9 : 8}"><div class="empty-state">${emptyMessage}</div></td></tr>`;
+  $('#export-sales').disabled = !isAdmin || !event?.closedAt || !sales.length;
+  $('#export-sales').title = event && !event.closedAt ? 'Excel final disponible al cerrar evento' : '';
   $$('[data-history-store]').forEach((button) => button.addEventListener('click', () => {
     selectedHistoryStoreId = button.dataset.historyStore;
     renderHistory();
@@ -893,6 +904,49 @@ function renderHistory() {
     const sale = state.sales.find((item) => item.id === button.dataset.reprint);
     if (sale) openTicketModal(sale);
   }));
+  $$('[data-observation]').forEach((button) => button.addEventListener('click', () => openSaleObservationModal(button.dataset.observation)));
+}
+
+function openSaleObservationModal(saleId) {
+  const sale = state.sales.find((item) => item.id === saleId);
+  if (!sale || (!isAdmin && sale.userId !== currentUser?.id)) return showToast('No puedes editar esta venta');
+  setModal(`<div class="modal">
+    <div class="modal-head"><div><h2>Observación de venta</h2><p>${esc(saleReference(sale))} · ${esc(sale.store?.name || 'Sin tienda')}</p></div><button class="modal-close" data-close-modal type="button">×</button></div>
+    <form id="sale-observation-form">
+      <div class="modal-body"><label class="field">Observación<textarea name="observation" rows="4" maxlength="180" placeholder="Motivo o aclaración para auditoría">${esc(sale.observation || '')}</textarea></label>
+      ${sale.observationUpdatedBy ? `<p class="soft-label">Última edición: ${esc(sale.observationUpdatedBy)} · ${formatDate(sale.observationUpdatedAt)}</p>` : ''}</div>
+      <div class="modal-actions"><button class="secondary-btn" data-close-modal type="button">Cancelar</button><button class="primary-btn" type="submit">Guardar observación</button></div>
+    </form>
+  </div>`);
+  $('#sale-observation-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const observation = String(new FormData(event.currentTarget).get('observation') || '').trim();
+    const button = event.currentTarget.querySelector('[type="submit"]');
+    button.disabled = true;
+    button.textContent = 'Guardando…';
+    try {
+      if (sale.syncStatus === 'pending') {
+        sale.observation = observation;
+        await saveState();
+      } else {
+        const payload = await apiRequest('/api/sales', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ saleId: sale.id, observation }),
+        });
+        if (localDirty) applyRemoteWithPending(payload, currentUser);
+        else applyRemoteState(payload, currentUser);
+      }
+      closeModal();
+      renderAll();
+      renderHistory();
+      showToast('Observación guardada');
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Guardar observación';
+      showToast(error.message || 'No se pudo guardar observación');
+    }
+  });
 }
 
 function renderSettings() {
@@ -1519,6 +1573,15 @@ function bindEvents() {
   $('#history-event-select').addEventListener('change', (event) => {
     selectedReportEventId = event.target.value;
     renderHistory();
+  });
+  $('#refresh-history').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = 'Actualizando…';
+    await refreshSharedState();
+    renderHistory();
+    button.disabled = false;
+    button.textContent = '↻ Actualizar';
   });
   $('#export-sales').addEventListener('click', exportSales);
   $('#receipt-logo-input').addEventListener('change', (event) => {

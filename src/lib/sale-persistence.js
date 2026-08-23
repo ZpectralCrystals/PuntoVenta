@@ -1,9 +1,26 @@
 import { calculateChange, cashRegisterCode, nextCashNumber, nextSessionSaleNumber } from './pos-core.js';
 
-function fail(message) {
+function fail(message, status = 400) {
   const error = new Error(message);
-  error.status = 400;
+  error.status = status;
   throw error;
+}
+
+export function updateSaleObservation(sourceState, saleId, value, actor, updatedAt = new Date().toISOString()) {
+  const state = structuredClone(sourceState);
+  const sale = state.sales.find((item) => item.id === saleId);
+  if (!sale) fail('Venta no encontrada', 404);
+  if (actor?.role !== 'admin' && sale.userId !== actor?.id) fail('No puedes editar esta venta', 403);
+  const observation = String(value || '').trim();
+  if (observation.length > 180) fail('Observación supera 180 caracteres');
+  if (observation === String(sale.observation || '')) return { state, sale, changed: false };
+  Object.assign(sale, {
+    observation,
+    observationUpdatedAt: safeDate(updatedAt),
+    observationUpdatedBy: actor?.name || 'Usuario',
+    observationUpdatedByUserId: actor?.id || '',
+  });
+  return { state, sale, changed: true };
 }
 
 function safeDate(value) {

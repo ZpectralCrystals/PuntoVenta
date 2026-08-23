@@ -190,7 +190,8 @@ import '../styles/global.css';
           <div class="section-toolbar">
             <div><h2 id="history-title">Reporte de ventas</h2><p id="history-description">Ventas cerradas por evento y tienda.</p></div>
             <div id="history-report-actions" class="history-actions">
-              <label class="report-picker"><span>Evento cerrado</span><select id="history-event-select" aria-label="Seleccionar evento cerrado"></select></label>
+              <label class="report-picker"><span>Evento</span><select id="history-event-select" aria-label="Seleccionar evento"></select></label>
+              <button id="refresh-history" class="secondary-btn fit" type="button">↻ Actualizar</button>
               <button id="export-sales" class="secondary-btn fit" type="button">↓ Exportar Excel</button>
             </div>
           </div>
@@ -199,7 +200,7 @@ import '../styles/global.css';
           <div class="data-card">
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Venta</th><th>Fecha</th><th>Tienda</th><th>Cliente</th><th>Pago</th><th>Items</th><th>Total</th><th></th></tr></thead>
+                <thead><tr><th>Venta</th><th>Fecha</th><th>Tienda</th><th id="history-cashier-heading">Cajero</th><th>Cliente</th><th>Pago</th><th>Items</th><th>Total</th><th></th></tr></thead>
                 <tbody id="history-table"></tbody>
               </table>
             </div>

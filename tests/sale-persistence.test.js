@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { restrictCashierState } from '../server/cloud-store.mjs';
-import { appendCanonicalSale } from '../src/lib/sale-persistence.js';
+import { appendCanonicalSale, updateSaleObservation } from '../src/lib/sale-persistence.js';
 
 const actor = { id: 'user-flor', name: 'Flor', role: 'cashier' };
 const state = () => ({
@@ -55,4 +55,14 @@ test('cliente antiguo no puede borrar venta ya confirmada', () => {
   const restricted = restrictCashierState(saved, stale, actor);
   assert.equal(restricted.sales.length, 1);
   assert.equal(restricted.sales[0].id, 'sale-saved');
+});
+
+test('admin y dueño editan observación; otro cajero no', () => {
+  const saved = appendCanonicalSale(state(), draft('sale-note'), actor).state;
+  const ownEdit = updateSaleObservation(saved, 'sale-note', 'Venta revisada', actor, '2026-08-23T13:00:00Z');
+  assert.equal(ownEdit.sale.observation, 'Venta revisada');
+  assert.equal(ownEdit.sale.observationUpdatedBy, 'Flor');
+  const adminEdit = updateSaleObservation(ownEdit.state, 'sale-note', 'Auditoría', { id: 'admin', name: 'Admin', role: 'admin' });
+  assert.equal(adminEdit.sale.observation, 'Auditoría');
+  assert.throws(() => updateSaleObservation(adminEdit.state, 'sale-note', 'No permitido', { id: 'other', name: 'Otro', role: 'cashier' }), /No puedes editar/);
 });
