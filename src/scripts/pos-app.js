@@ -339,7 +339,32 @@ function closeModal() {
   $('#modal-root').innerHTML = '';
 }
 
+function businessName() {
+  return String(state.settings.businessName || '').trim() || 'Mesa Clara';
+}
+
+function brandMarkHtml() {
+  const logo = state.settings.receiptLogo;
+  return logo
+    ? `<img src="${esc(logo)}" alt="" />`
+    : esc(businessName().charAt(0).toUpperCase());
+}
+
+function renderBrand() {
+  const name = businessName();
+  const logo = Boolean(state.settings.receiptLogo);
+  $$('[data-business-name]').forEach((element) => { element.textContent = name; });
+  $$('[data-business-mark]').forEach((element) => {
+    element.innerHTML = brandMarkHtml();
+    element.classList.toggle('has-logo', logo);
+  });
+  const brand = $('.brand');
+  if (brand) brand.setAttribute('aria-label', `${name} POS`);
+  document.title = `${name} POS`;
+}
+
 function renderAll() {
+  renderBrand();
   renderStoreSelect();
   renderEventStatus();
   renderCashStatus();
@@ -708,9 +733,11 @@ function requestView(view) {
 }
 
 function openLoginModal() {
+  const name = businessName();
+  const hasLogo = Boolean(state.settings.receiptLogo);
   setModal(`<div class="modal login-screen">
     <section class="login-showcase">
-      <div class="login-brand"><span class="brand-mark">M</span><span><strong>Mesa Clara</strong><small>Festival POS</small></span></div>
+      <div class="login-brand"><span class="brand-mark${hasLogo ? ' has-logo' : ''}">${brandMarkHtml()}</span><span><strong>${esc(name)}</strong><small>Festival POS</small></span></div>
       <div><p class="eyebrow">Caja central del festival</p><h2>Una caja.<br/>Cada tienda, su ticket.</h2><p>Ventas separadas por negocio, vuelto automático y cuadre final consolidado.</p></div>
       <div class="login-stores">${state.stores.map((store) => `<span>⌂ ${esc(store.name)}</span>`).join('')}</div>
     </section>
