@@ -9,18 +9,24 @@ import {
   updateCartQty,
 } from '../lib/pos-core.js';
 import { INITIAL_STATE } from '../lib/initial-state.js';
+import { deleteOfflineRecord, readOfflineRecord, writeOfflineRecord } from '../lib/offline-outbox.js';
+import { mergeOfflineState } from '../lib/offline-state.js';
 
 const STORAGE_KEY = 'mesa-clara-pos-v1';
 const SESSION_KEY = 'mesa-clara-current-user';
 const AUTH_KEY = 'mesa-clara-auth-token';
+const DIRTY_KEY = 'mesa-clara-sync-pending';
+const OUTBOX_KEY = 'pending-state';
+const BASE_KEY = 'remote-base';
 const palette = ['#3e805e', '#d47a4c', '#526fb5', '#9a624f', '#7c67a9', '#b49338'];
 const productColors = ['#dcecdf', '#f7e1ca', '#dbe5f4', '#eadcf0', '#f4dfdd', '#e7e3c4'];
 
 const initialState = INITIAL_STATE;
 
 let state = loadState();
-let authToken = sessionStorage.getItem(AUTH_KEY) || '';
-let currentUser = authToken ? state.users.find((user) => user.id === sessionStorage.getItem(SESSION_KEY) && user.active) || null : null;
+let authToken = sessionStorage.getItem(AUTH_KEY) || localStorage.getItem(AUTH_KEY) || '';
+let currentUserId = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY) || '';
+let currentUser = authToken ? state.users.find((user) => user.id === currentUserId && user.active) || null : null;
 let selectedStoreId = state.stores[0]?.id || '';
 let selectedReportEventId = '';
 let cart = [];
@@ -33,8 +39,9 @@ let remoteEnabled = false;
 let syncReady = false;
 let pendingWrites = 0;
 let mutationNumber = 0;
-let localDirty = false;
+let localDirty = localStorage.getItem(DIRTY_KEY) === '1';
 let saveChain = Promise.resolve();
+let outboxChain = Promise.resolve();
 let remoteBaseState = structuredClone(state);
 let refreshInFlight = false;
 let saveRetryTimer;
@@ -44,7 +51,7 @@ let logoPreviewUrl = '';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const uid = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`}`;
 const esc = (value = '') => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const currentStore = () => state.stores.find((store) => store.id === selectedStoreId);
 const currentEvent = () => state.events.find((event) => !event.closedAt);
@@ -125,7 +132,68 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   mutationNumber += 1;
   localDirty = true;
-  if (syncReady) queueRemoteSave();
+  localStorage.setItem(DIRTY_KEY, '1');
+  persistPendingState();
+  if (syncReady && navigator.onLine) queueRemoteSave();
+  else setPendingSyncStatus();
+}
+
+function queueOutboxAction(action) {
+  outboxChain = outboxChain.then(action).catch((error) => console.warn('No se pudo actualizar cola offline:', error));
+  return outboxChain;
+}
+
+function persistPendingState() {
+  const pending = { state: structuredClone(state), baseState: structuredClone(remoteBaseState), savedAt: new Date().toISOString() };
+  queueOutboxAction(() => writeOfflineRecord(OUTBOX_KEY, pending));
+}
+
+function persistRemoteBase() {
+  const snapshot = structuredClone(remoteBaseState);
+  try { localStorage.setItem(BASE_KEY, JSON.stringify(snapshot)); } catch {}
+  queueOutboxAction(() => writeOfflineRecord(BASE_KEY, snapshot));
+}
+
+function clearPendingState() {
+  localStorage.removeItem(DIRTY_KEY);
+  queueOutboxAction(() => deleteOfflineRecord(OUTBOX_KEY));
+}
+
+async function restoreOfflineState() {
+  try {
+    const [pending, storedBase] = await Promise.all([readOfflineRecord(OUTBOX_KEY), readOfflineRecord(BASE_KEY)]);
+    let fallbackBase = null;
+    try { fallbackBase = JSON.parse(localStorage.getItem(BASE_KEY)); } catch {}
+    if (localDirty && pending?.state) state = remoteState(pending.state);
+    remoteBaseState = remoteState(pending?.baseState || storedBase || fallbackBase || state);
+    if (!localDirty && pending) await deleteOfflineRecord(OUTBOX_KEY);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    currentUser = authToken ? state.users.find((user) => user.id === currentUserId && user.active) || null : null;
+    isAdmin = currentUser?.role === 'admin';
+    if (!state.stores.some((store) => store.id === selectedStoreId)) selectedStoreId = state.stores[0]?.id || '';
+  } catch (error) {
+    console.warn('No se pudo restaurar cola offline:', error);
+  }
+}
+
+function registerOfflineApp() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('No se pudo registrar modo offline:', error));
+  }
+  navigator.storage?.persist?.().catch(() => {});
+}
+
+function pendingSaleCount() {
+  const baseIds = new Set((remoteBaseState.sales || []).map((sale) => sale.id));
+  return (state.sales || []).filter((sale) => !baseIds.has(sale.id)).length;
+}
+
+function setPendingSyncStatus() {
+  const count = pendingSaleCount();
+  const text = count
+    ? `${count} venta${count === 1 ? '' : 's'} pendiente${count === 1 ? '' : 's'}`
+    : 'Cambios pendientes de sincronizar';
+  setSyncStatus(text, navigator.onLine ? 'saving' : 'offline');
 }
 
 function setSyncStatus(text, mode = 'online') {
@@ -134,6 +202,23 @@ function setSyncStatus(text, mode = 'online') {
   status.dataset.mode = mode;
   const label = status.querySelector('[data-sync-label]');
   if (label) label.textContent = text;
+}
+
+function storeAuth(userId) {
+  currentUserId = userId;
+  sessionStorage.setItem(AUTH_KEY, authToken);
+  sessionStorage.setItem(SESSION_KEY, userId);
+  localStorage.setItem(AUTH_KEY, authToken);
+  localStorage.setItem(SESSION_KEY, userId);
+}
+
+function clearStoredAuth() {
+  authToken = '';
+  currentUserId = '';
+  sessionStorage.removeItem(AUTH_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(SESSION_KEY);
 }
 
 function remoteState(value) {
@@ -154,8 +239,23 @@ function applyRemoteState(payload, authenticatedUser = null) {
   state = remoteState(payload.state);
   remoteRevision = Number(payload.revision || 0);
   remoteBaseState = structuredClone(state);
+  persistRemoteBase();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  const userId = authenticatedUser?.id || sessionStorage.getItem(SESSION_KEY);
+  const userId = authenticatedUser?.id || currentUserId;
+  currentUser = state.users.find((user) => user.id === userId && user.active) || authenticatedUser || null;
+  isAdmin = currentUser?.role === 'admin';
+  if (!state.stores.some((store) => store.id === selectedStoreId)) selectedStoreId = state.stores[0]?.id || '';
+}
+
+function applyRemoteWithPending(payload, authenticatedUser = null) {
+  const localState = structuredClone(state);
+  state = mergeConcurrentState(remoteBaseState, localState, payload.state);
+  remoteRevision = Number(payload.revision || 0);
+  remoteBaseState = remoteState(payload.state);
+  persistRemoteBase();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  persistPendingState();
+  const userId = authenticatedUser?.id || currentUserId;
   currentUser = state.users.find((user) => user.id === userId && user.active) || authenticatedUser || null;
   isAdmin = currentUser?.role === 'admin';
   if (!state.stores.some((store) => store.id === selectedStoreId)) selectedStoreId = state.stores[0]?.id || '';
@@ -183,19 +283,7 @@ function mergeConcurrentState(baseValue, localValue, remoteValue) {
   const base = remoteState(baseValue);
   const local = remoteState(localValue);
   const remote = remoteState(remoteValue);
-  const merged = structuredClone(remote);
-  if (JSON.stringify(local.settings) !== JSON.stringify(base.settings)) merged.settings = structuredClone(local.settings);
-  ['users', 'stores', 'products', 'sessions', 'sales', 'events'].forEach((key) => {
-    const baseMap = new Map(base[key].map((item) => [item.id, item]));
-    const localMap = new Map(local[key].map((item) => [item.id, item]));
-    const mergedMap = new Map(remote[key].map((item) => [item.id, item]));
-    baseMap.forEach((_item, id) => { if (!localMap.has(id)) mergedMap.delete(id); });
-    localMap.forEach((item, id) => {
-      if (!baseMap.has(id) || JSON.stringify(item) !== JSON.stringify(baseMap.get(id))) mergedMap.set(id, structuredClone(item));
-    });
-    merged[key] = [...mergedMap.values()];
-  });
-  return merged;
+  return mergeOfflineState(base, local, remote);
 }
 
 async function pushSharedState(snapshot, savedMutation) {
@@ -225,12 +313,17 @@ async function pushSharedState(snapshot, savedMutation) {
   }
   remoteRevision = Number(payload.revision || remoteRevision);
   remoteBaseState = remoteState(savedState);
+  persistRemoteBase();
   remoteEnabled = true;
-  if (savedMutation === mutationNumber) localDirty = false;
+  if (savedMutation === mutationNumber) {
+    localDirty = false;
+    clearPendingState();
+  }
   clearTimeout(saveRetryTimer);
   saveRetryTimer = null;
   saveRetryDelay = 3_000;
-  setSyncStatus('Base compartida conectada', 'online');
+  if (localDirty) setPendingSyncStatus();
+  else setSyncStatus('Base compartida conectada', 'online');
 }
 
 function scheduleSaveRetry() {
@@ -244,6 +337,10 @@ function scheduleSaveRetry() {
 }
 
 function queueRemoteSave() {
+  if (!navigator.onLine) {
+    setPendingSyncStatus();
+    return;
+  }
   const snapshot = structuredClone(state);
   const savedMutation = mutationNumber;
   pendingWrites += 1;
@@ -253,7 +350,7 @@ function queueRemoteSave() {
     .catch((error) => {
       remoteEnabled = false;
       console.warn('No se pudo guardar en la base compartida:', error);
-      setSyncStatus('Sin red · copia local', 'offline');
+      setPendingSyncStatus();
       if (error.status !== 401) scheduleSaveRetry();
     })
     .finally(() => { pendingWrites -= 1; });
@@ -265,29 +362,34 @@ async function connectSharedState() {
     currentUser = null;
     isAdmin = false;
     syncReady = true;
-    setSyncStatus('Servidor local · inicia sesión', 'online');
+    setSyncStatus(localDirty ? 'Pendientes · inicia sesión para sincronizar' : 'Inicia sesión', localDirty ? 'offline' : 'online');
     return;
   }
+  let pushPending = false;
   try {
     const payload = await fetchSharedState();
-    applyRemoteState(payload);
+    if (localDirty) {
+      applyRemoteWithPending(payload);
+      pushPending = true;
+    } else {
+      applyRemoteState(payload);
+    }
     remoteEnabled = true;
-    localDirty = false;
-    setSyncStatus('Base compartida conectada', 'online');
+    if (!pushPending) setSyncStatus('Base compartida conectada', 'online');
   } catch (error) {
     if (error.status === 401) {
-      authToken = '';
       currentUser = null;
       isAdmin = false;
-      sessionStorage.removeItem(AUTH_KEY);
-      sessionStorage.removeItem(SESSION_KEY);
+      clearStoredAuth();
       setSyncStatus('Sesión vencida · ingresa otra vez', 'offline');
     } else {
       console.warn('Base compartida no disponible; se usará copia local:', error);
-      setSyncStatus('Sin red · copia local', 'offline');
+      if (localDirty) setPendingSyncStatus();
+      else setSyncStatus('Sin red · datos guardados localmente', 'offline');
     }
   } finally {
     syncReady = true;
+    if (pushPending) queueRemoteSave();
   }
 }
 
@@ -308,18 +410,17 @@ async function refreshSharedState() {
     if (!currentUser) openLoginModal();
   } catch (error) {
     if (error.status === 401) {
-      authToken = '';
       currentUser = null;
       isAdmin = false;
-      sessionStorage.removeItem(AUTH_KEY);
-      sessionStorage.removeItem(SESSION_KEY);
+      clearStoredAuth();
       renderAll();
       openLoginModal();
       return setSyncStatus('Sesión vencida · ingresa otra vez', 'offline');
     }
     if (remoteEnabled) console.warn('Se perdió conexión con la base compartida:', error);
     remoteEnabled = false;
-    setSyncStatus('Sin red · copia local', 'offline');
+    if (localDirty) setPendingSyncStatus();
+    else setSyncStatus('Sin red · datos guardados localmente', 'offline');
   } finally {
     refreshInFlight = false;
   }
@@ -796,11 +897,11 @@ function openLoginModal() {
         body: JSON.stringify({ username: data.username, password: data.password }),
       });
       authToken = payload.token;
-      sessionStorage.setItem(AUTH_KEY, authToken);
-      sessionStorage.setItem(SESSION_KEY, payload.currentUser.id);
-      applyRemoteState(payload, payload.currentUser);
+      storeAuth(payload.currentUser.id);
+      const hadPendingChanges = localDirty;
+      if (hadPendingChanges) applyRemoteWithPending(payload, payload.currentUser);
+      else applyRemoteState(payload, payload.currentUser);
       remoteEnabled = true;
-      localDirty = false;
       currentUser = payload.currentUser;
       isAdmin = currentUser.role === 'admin';
       if (!state.stores.some((store) => store.id === selectedStoreId)) selectedStoreId = state.stores[0]?.id || '';
@@ -809,7 +910,8 @@ function openLoginModal() {
       cart = [];
       renderAll();
       switchView(isAdmin ? 'events' : 'pos');
-      setSyncStatus('Base compartida conectada', 'online');
+      if (hadPendingChanges) queueRemoteSave();
+      else setSyncStatus('Base compartida conectada', 'online');
       showToast(`Sesión iniciada: ${currentUser.name}`);
     } catch (error) {
       console.warn('Inicio de sesión rechazado:', error);
@@ -828,10 +930,8 @@ async function logoutUser() {
   currentUser = null;
   isAdmin = false;
   cart = [];
-  authToken = '';
-  sessionStorage.removeItem(AUTH_KEY);
-  sessionStorage.removeItem(SESSION_KEY);
-  setSyncStatus('Servidor local · inicia sesión', 'online');
+  clearStoredAuth();
+  setSyncStatus(localDirty ? 'Pendientes · inicia sesión para sincronizar' : 'Inicia sesión', localDirty ? 'offline' : 'online');
   renderAll();
   switchView('pos');
   openLoginModal();
@@ -979,21 +1079,26 @@ function openCloseEventModal() {
   if (!event) return openStartEventModal();
   const settlement = eventSettlement(event, state.stores, state.sessions, activeSales());
   const openSessions = state.sessions.filter((session) => session.eventId === event.id && !session.closedAt);
+  const hasPendingSync = localDirty || pendingWrites > 0;
   setModal(`<div class="modal wide">
     <div class="modal-head"><div><h2>Cerrar evento y generar cuadre</h2><p>${esc(event.name)}</p></div><button class="modal-close" data-close-modal type="button">×</button></div>
     <div class="modal-body">
-      ${openSessions.length ? `<div class="warning-box"><strong>No se puede cerrar.</strong> Caja central abierta por ${openSessions.map((session) => esc(session.cashier)).join(', ')}.</div>` : '<div class="success-box">Caja central cerrada. Cuadre listo para consolidar.</div>'}
+      ${openSessions.length
+    ? `<div class="warning-box"><strong>No se puede cerrar.</strong> Caja central abierta por ${openSessions.map((session) => esc(session.cashier)).join(', ')}.</div>`
+    : hasPendingSync
+      ? '<div class="warning-box"><strong>No se puede cerrar.</strong> Espera sincronización de ventas pendientes.</div>'
+      : '<div class="success-box">Caja central cerrada y datos sincronizados. Cuadre listo.</div>'}
       <div class="cash-summary settlement-summary">
         <div><span>VENTAS</span><strong>${settlement.saleCount}</strong></div><div><span>TOTAL VENDIDO</span><strong>${money(settlement.salesTotal)}</strong></div>
         <div><span>EFECTIVO ESPERADO</span><strong>${money(settlement.expectedCash)}</strong></div><div><span>EFECTIVO CONTADO</span><strong>${money(settlement.countedCash)}</strong></div>
         <div><span>YAPE</span><strong>${money(settlement.payments.YAPE)}</strong></div><div><span>DIFERENCIA</span><strong class="${settlement.difference ? 'negative-value' : ''}">${money(settlement.difference)}</strong></div>
       </div>
     </div>
-    <div class="modal-actions"><button class="secondary-btn" data-close-modal type="button">Volver</button><button id="confirm-event-close" class="primary-btn" type="button" ${openSessions.length ? 'disabled' : ''}>Cerrar y guardar cuadre</button></div>
+    <div class="modal-actions"><button class="secondary-btn" data-close-modal type="button">Volver</button><button id="confirm-event-close" class="primary-btn" type="button" ${openSessions.length || hasPendingSync ? 'disabled' : ''}>Cerrar y guardar cuadre</button></div>
   </div>`);
   $('#confirm-event-close').addEventListener('click', () => {
     const hasOpenSessions = state.sessions.some((session) => session.eventId === event.id && !session.closedAt);
-    if (!isAdmin || hasOpenSessions || event.closedAt) return showToast('Cierra todas las cajas antes del evento');
+    if (!isAdmin || hasOpenSessions || localDirty || pendingWrites || event.closedAt) return showToast('Cierra cajas y sincroniza pendientes');
     event.closedAt = new Date().toISOString();
     event.status = 'closed';
     event.settlement = settlement;
@@ -1341,12 +1446,18 @@ function bindEvents() {
 }
 
 async function initializeApp() {
+  await restoreOfflineState();
   bindEvents();
+  registerOfflineApp();
   await connectSharedState();
   renderAll();
   if (!currentUser) openLoginModal();
   window.addEventListener('focus', refreshSharedState);
   window.addEventListener('online', refreshSharedState);
+  window.addEventListener('offline', () => {
+    if (localDirty) setPendingSyncStatus();
+    else setSyncStatus('Sin red · listo para vender offline', 'offline');
+  });
 }
 
 initializeApp();
