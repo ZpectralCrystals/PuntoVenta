@@ -283,6 +283,11 @@ tbody tr:hover { background: #fbfaf6; }
 .login-heading h2 { margin: 0 0 5px; font-size: 23px; }
 .login-heading p { margin: 0; color: var(--muted); font-size: 12px; }
 .login-fields { display: grid; gap: 13px; }
+.password-field { position: relative; }
+.password-field input { width: 100%; padding-right: 44px; }
+.password-toggle { position: absolute; inset: 4px 4px 4px auto; width: 36px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); display: grid; place-items: center; }
+.password-toggle:hover, .password-toggle[aria-pressed="true"] { background: var(--green-soft); color: var(--green); }
+.password-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .login-submit { width: 100%; margin-top: 15px; }
 .login-security { text-align: center; color: var(--muted); font-size: 10px; margin: 15px 0 0; }
 .form-error { color: var(--red); background: #f9e5e3; border-radius: 8px; padding: 8px; font-size: 11px; text-align: center; margin: 9px 0 0; }

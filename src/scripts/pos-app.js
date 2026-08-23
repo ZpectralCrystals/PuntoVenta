@@ -910,7 +910,7 @@ function openLoginModal() {
       <form id="login-form">
         <div class="login-fields">
           <label class="field">Usuario<input name="username" maxlength="30" autocomplete="username" required autofocus /></label>
-          <label class="field">Clave<input name="password" type="password" maxlength="40" autocomplete="current-password" required /></label>
+          <label class="field">Clave<div class="password-field"><input id="login-password" name="password" type="password" maxlength="40" autocomplete="current-password" required /><button id="toggle-login-password" class="password-toggle" type="button" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.7"></circle></svg></button></div></label>
         </div>
         <p id="login-error" class="form-error" hidden>Usuario o clave incorrectos.</p>
         <button class="primary-btn login-submit" type="submit">Ingresar al sistema</button>
@@ -921,6 +921,15 @@ function openLoginModal() {
   </div>`);
   $('#modal-root').onclick = null;
   $('#modal-root').dataset.locked = 'true';
+  $('#toggle-login-password').addEventListener('click', (event) => {
+    const input = $('#login-password');
+    const visible = input.type === 'password';
+    input.type = visible ? 'text' : 'password';
+    event.currentTarget.setAttribute('aria-pressed', String(visible));
+    event.currentTarget.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+    event.currentTarget.title = visible ? 'Ocultar contraseña' : 'Mostrar contraseña';
+    input.focus({ preventScroll: true });
+  });
   $('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
